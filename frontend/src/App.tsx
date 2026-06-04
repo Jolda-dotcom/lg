@@ -35,6 +35,7 @@ function App() {
   const [schedulerOn, setSchedulerOn] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState("");
 
   const baseUrl = backendUrl.replace(/\/$/, "");
 
@@ -54,6 +55,7 @@ function App() {
     setLoading(true);
     await Promise.all([loadDevices(), loadGroups()]);
     setLoading(false);
+    setLastRefresh(new Date().toLocaleTimeString());
     setStatusMessage("Status osvježen");
     setTimeout(() => setStatusMessage(""), 2000);
   };
@@ -206,7 +208,7 @@ function App() {
       .map((device) => device.id);
 
     if (selectedIds.length === 0) {
-      alert("Nema oznacenih uredaja.");
+      alert("Nema označenih uređaja.");
       return;
     }
 
@@ -227,7 +229,7 @@ function App() {
       .map((device) => device.id);
 
     if (selectedIds.length === 0) {
-      alert("Nema oznacenih uredaja.");
+      alert("Nema označenih uređaja.");
       return;
     }
 
@@ -282,7 +284,7 @@ function App() {
     });
 
     await refreshAll();
-    alert("Oznaceni uredaji dodani u grupu.");
+    alert("Označeni uređaji dodani u grupu.");
   };
 
   const handleRestartGroup = async (groupId: number) => {
@@ -317,10 +319,10 @@ function App() {
       <aside className="sidebar">
         <h2>LG TV Manager</h2>
         <div className="sidebar-menu">
-          <p onClick={() => setActivePage("dashboard")}>📊 Dashboard</p>
-          <p onClick={() => setActivePage("devices")}>📺 Uređaji</p>
-          <p onClick={() => setActivePage("groups")}>👥 Grupe</p>
-          <p onClick={() => setActivePage("settings")}>⚙️ Postavke</p>
+          <p className={activePage === "dashboard" ? "active" : ""} onClick={() => setActivePage("dashboard")}>📊 Dashboard</p>
+          <p className={activePage === "devices" ? "active" : ""} onClick={() => setActivePage("devices")}>📺 Uređaji</p>
+          <p className={activePage === "groups" ? "active" : ""} onClick={() => setActivePage("groups")}>👥 Grupe</p>
+          <p className={activePage === "settings" ? "active" : ""} onClick={() => setActivePage("settings")}>⚙️ Postavke</p>
         </div>
       </aside>
 
@@ -331,7 +333,7 @@ function App() {
             <div className="stats">
               <div className="stat-card">
                 <div className="stat-number">{devices.length}</div>
-                <div>Ukupno uredaja</div>
+                <div>Ukupno uređaja</div>
               </div>
               <div className="stat-card">
                 <div className="stat-number">{onlineCount}</div>
@@ -349,7 +351,7 @@ function App() {
 
             <div className="dashboard-charts">
               <div className="chart-card">
-                <div className="chart-title">Online uredaji</div>
+                <div className="chart-title">Online uređaji</div>
                 <div className="chart-bar-container">
                   <div
                     className="chart-bar online"
@@ -361,7 +363,7 @@ function App() {
                 <div>{onlineCount} / {devices.length}</div>
               </div>
               <div className="chart-card">
-                <div className="chart-title">Offline uredaji</div>
+                <div className="chart-title">Offline uređaji</div>
                 <div className="chart-bar-container">
                   <div
                     className="chart-bar offline"
@@ -378,14 +380,14 @@ function App() {
 
         {activePage === "groups" && (
           <>
-            <h1>Grupe uredaja</h1>
+            <h1>Grupe uređaja</h1>
             <div className="group-actions">
               <input
                 placeholder="Naziv nove grupe"
                 value={groupName}
                 onChange={(e) => setGroupName(e.target.value)}
               />
-              <button className="add-btn" onClick={handleCreateGroup}>
+              <button type="button" className="add-btn" onClick={handleCreateGroup}>
                 Kreiraj grupu
               </button>
             </div>
@@ -394,8 +396,9 @@ function App() {
               {groups.map((group) => (
                 <div className="group-card" key={group.id}>
                   <div className="group-card-title">{group.name}</div>
-                  <div>{group.deviceCount} uredaja</div>
+                  <div>{group.deviceCount} uređaja</div>
                   <button
+                    type="button"
                     className="action-btn restart-btn"
                     onClick={() => handleRestartGroup(group.id)}
                   >
@@ -429,6 +432,7 @@ function App() {
               <br />
               <br />
               <button
+                type="button"
                 className="save-btn"
                 onClick={() => alert("Postavke spremljene lokalno.")}
               >
@@ -441,16 +445,27 @@ function App() {
         {activePage === "devices" && (
           <>
             <div className="top-bar">
-              <h1>Uredaji</h1>
-              <button className="add-btn" onClick={handleOpenModal}>
-                + Dodaj uredaj
-              </button>
+              <div>
+                <h1>Uređaji</h1>
+                <p className="page-description">
+                  Pronađi uređaje brzo, upravljaj grupama i primjeni postavke u nekoliko klikova.
+                </p>
+                <p className="last-refresh">Zadnje osvježenje: {lastRefresh || "još nije osvježeno"}</p>
+              </div>
+              <div className="top-bar-actions">
+                <button type="button" className="refresh-btn" onClick={refreshAll}>
+                  Osvježi
+                </button>
+                <button type="button" className="add-btn" onClick={handleOpenModal}>
+                  + Dodaj uređaj
+                </button>
+              </div>
             </div>
 
             <div className="stats">
               <div className="stat-card">
                 <div className="stat-number">{devices.length}</div>
-                <div>Ukupno uredaja</div>
+                <div>Ukupno uređaja</div>
               </div>
               <div className="stat-card">
                 <div className="stat-number">{onlineCount}</div>
@@ -474,13 +489,13 @@ function App() {
             />
 
             <div className="actions">
-              <button className="action-btn restart-btn" onClick={handleRestartSelected}>
-                Restart oznacenih
+              <button type="button" className="action-btn restart-btn" onClick={handleRestartSelected}>
+                Restart označenih
               </button>
-              <button className="action-btn settings-btn" onClick={handleApplySettings}>
+              <button type="button" className="action-btn settings-btn" onClick={handleApplySettings}>
                 Pošalji postavke
               </button>
-              <button className="action-btn delete-selected-btn" onClick={handleDeleteSelected}>
+              <button type="button" className="action-btn delete-selected-btn" onClick={handleDeleteSelected}>
                 Obriši odabrane
               </button>
               <select
@@ -519,55 +534,63 @@ function App() {
                 </thead>
 
                 <tbody>
-                  {filteredDevices.map((device) => (
-                    <tr key={device.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={device.selected}
-                          onChange={() => toggleDevice(device.id)}
-                        />
-                      </td>
-                      <td>{device.name}</td>
-                      <td>{device.ip}</td>
-                      <td>{device.mac}</td>
-                      <td>{device.groupName || "-"}</td>
-                      <td>
-                        <span
-                          className={
-                            device.status === "Online"
-                              ? "status-online"
-                              : "status-offline"
-                          }
-                        >
-                          {device.status === "Online" ? "🟢" : "🔴"}
-                          {" "}
-                          {device.status}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          className="edit-btn"
-                          onClick={() => {
-                            setEditingId(device.id);
-                            setDeviceName(device.name);
-                            setDeviceIp(device.ip);
-                            setDeviceMac(device.mac);
-                            setModalGroupId(device.groupId ?? null);
-                            setShowModal(true);
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="delete-btn"
-                          onClick={() => handleDelete(device.id)}
-                        >
-                          Obriši
-                        </button>
+                  {filteredDevices.length === 0 ? (
+                    <tr className="empty-row">
+                      <td colSpan={7}>
+                        Nema uređaja za prikaz. Dodaj novi uređaj ili očisti pretragu.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredDevices.map((device) => (
+                      <tr key={device.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={device.selected}
+                            onChange={() => toggleDevice(device.id)}
+                          />
+                        </td>
+                        <td>{device.name}</td>
+                        <td>{device.ip}</td>
+                        <td>{device.mac}</td>
+                        <td>{device.groupName || "-"}</td>
+                        <td>
+                          <span
+                            className={
+                              device.status === "Online"
+                                ? "status-online"
+                                : "status-offline"
+                            }
+                          >
+                            {device.status === "Online" ? "🟢" : "🔴"} {device.status}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="edit-btn"
+                            onClick={() => {
+                              setEditingId(device.id);
+                              setDeviceName(device.name);
+                              setDeviceIp(device.ip);
+                              setDeviceMac(device.mac);
+                              setModalGroupId(device.groupId ?? null);
+                              setShowModal(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="delete-btn"
+                            onClick={() => handleDelete(device.id)}
+                          >
+                            Obriši
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -583,7 +606,7 @@ function App() {
             <input
               value={deviceName}
               onChange={(e) => setDeviceName(e.target.value)}
-              placeholder="Naziv uredaja"
+              placeholder="Naziv uređaja"
             />
             <input
               value={deviceIp}
@@ -612,8 +635,8 @@ function App() {
             </select>
 
             <div className="modal-buttons">
-              <button onClick={() => setShowModal(false)}>Otkaži</button>
-              <button className="save-btn" onClick={handleSave}>
+              <button type="button" onClick={() => setShowModal(false)}>Otkaži</button>
+              <button type="button" className="save-btn" onClick={handleSave}>
                 Sacuvaj
               </button>
             </div>
