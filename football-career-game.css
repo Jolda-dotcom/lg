@@ -1,0 +1,168 @@
+:root {
+  color-scheme: dark;
+  background: #101320;
+  color: #e5e7eb;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, rgba(96, 165, 250, 0.14), transparent 25%),
+              radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.12), transparent 28%),
+              linear-gradient(180deg, #030416 0%, #0f172a 100%);
+}
+
+.game-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 3rem);
+}
+
+header p {
+  margin: 12px auto 0;
+  max-width: 760px;
+  color: #94a3b8;
+}
+
+.status-panel,
+.controls-panel,
+.summary-panel {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.status-panel {
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+}
+
+.controls-panel {
+  grid-template-columns: 1fr;
+}
+
+.card {
+  background: rgba(15, 23, 42, 0.84);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 24px;
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.card.wide {
+  width: 100%;
+}
+
+.card h2 {
+  margin: 0 0 14px;
+  font-size: 1.2rem;
+}
+
+#player-info,
+#season-info,
+#summary-info {
+  display: grid;
+  gap: 10px;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+#career-log {
+  min-height: 320px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  max-height: 420px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 14px;
+  padding: 14px 20px;
+  font-size: 1rem;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.action-btn.secondary {
+  background: #475569;
+}
+
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.action-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.offers {
+  display: grid;
+  gap: 12px;
+}
+
+.offer-card {
+  background: rgba(30, 41, 59, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.offer-card h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.offer-card p {
+  margin: 2px 0;
+  color: #cbd5e1;
+}
+
+.offer-card button {
+  margin-top: 10px;
+  width: 100%;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #a7f3d0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 768px) {
+  .status-panel,
+  .controls-panel,
+  .summary-panel {
+    display: block;
+  }
+}

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fudbalska karijera - Mini igra</title>
+  <link rel="stylesheet" href="football-career-game.css" />
+</head>
+<body>
+  <div class="game-shell">
+    <header>
+      <h1>Fudbalska karijera - golgeter</h1>
+      <p>Simuliraj sezonu, prati golove, klub, ugovor i transfer ponude.</p>
+    </header>
+
+    <section class="status-panel">
+      <div class="card">
+        <h2>Igrač</h2>
+        <div id="player-info"></div>
+      </div>
+      <div class="card">
+        <h2>Sezona</h2>
+        <div id="season-info"></div>
+      </div>
+    </section>
+
+    <section class="controls-panel">
+      <div class="card wide">
+        <h2>Kontrole</h2>
+        <button id="next-season-btn" class="action-btn">Simuliraj sljedeću sezonu</button>
+        <button id="decline-offers-btn" class="action-btn secondary" disabled>Odbij ponude</button>
+      </div>
+      <div class="card wide">
+        <h2>Ponude transfera</h2>
+        <div id="transfer-offers" class="offers"></div>
+      </div>
+    </section>
+
+    <section class="log-panel">
+      <div class="card wide">
+        <h2>Log karijere</h2>
+        <pre id="career-log"></pre>
+      </div>
+    </section>
+
+    <section class="summary-panel">
+      <div class="card wide">
+        <h2>Ukupni podaci</h2>
+        <div id="summary-info"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="football-career-game.js"></script>
+</body>
+</html>
