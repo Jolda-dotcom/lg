@@ -338,12 +338,18 @@ function App() {
   const offlineCount = devices.filter((device) => device.status === "Offline").length;
   const selectedCount = devices.filter((device) => device.selected).length;
 
+  const formatStatusText = (status: string) => {
+    if (status === "Online") return "Na mreži";
+    if (status === "Offline") return "Van mreže";
+    return status;
+  };
+
   return (
     <div className="app">
       <aside className="sidebar">
-        <h2>LG TV Manager</h2>
+        <h2>LG TV Upravljač</h2>
         <div className="sidebar-menu">
-          <p className={activePage === "dashboard" ? "active" : ""} onClick={() => setActivePage("dashboard")}>📊 Dashboard</p>
+          <p className={activePage === "dashboard" ? "active" : ""} onClick={() => setActivePage("dashboard")}>📊 Početna</p>
           <p className={activePage === "devices" ? "active" : ""} onClick={() => setActivePage("devices")}>📺 Uređaji</p>
           <p className={activePage === "groups" ? "active" : ""} onClick={() => setActivePage("groups")}>👥 Grupe</p>
           <p className={activePage === "settings" ? "active" : ""} onClick={() => setActivePage("settings")}>⚙️ Postavke</p>
@@ -353,7 +359,7 @@ function App() {
       <main className="content">
         {activePage === "dashboard" && (
           <>
-            <h1>Dashboard</h1>
+            <h1>Početna</h1>
             <div className="stats">
               <div className="stat-card">
                 <div className="stat-number">{devices.length}</div>
@@ -361,11 +367,11 @@ function App() {
               </div>
               <div className="stat-card">
                 <div className="stat-number">{onlineCount}</div>
-                <div>Online</div>
+                <div>Na mreži</div>
               </div>
               <div className="stat-card">
                 <div className="stat-number">{offlineCount}</div>
-                <div>Offline</div>
+                <div>Van mreže</div>
               </div>
               <div className="stat-card">
                 <div className="stat-number">{groups.length}</div>
@@ -375,7 +381,7 @@ function App() {
 
             <div className="dashboard-charts">
               <div className="chart-card">
-                <div className="chart-title">Online uređaji</div>
+                <div className="chart-title">Uređaji na mreži</div>
                 <div className="chart-bar-container">
                   <div
                     className="chart-bar online"
@@ -387,7 +393,7 @@ function App() {
                 <div>{onlineCount} / {devices.length}</div>
               </div>
               <div className="chart-card">
-                <div className="chart-title">Offline uređaji</div>
+                <div className="chart-title">Uređaji van mreže</div>
                 <div className="chart-bar-container">
                   <div
                     className="chart-bar offline"
@@ -537,11 +543,11 @@ function App() {
               </div>
               <div className="stat-card">
                 <div className="stat-number">{onlineCount}</div>
-                <div>Online</div>
+                <div>Na mreži</div>
               </div>
               <div className="stat-card">
                 <div className="stat-number">{offlineCount}</div>
-                <div>Offline</div>
+                <div>Van mreže</div>
               </div>
               <div className="stat-card">
                 <div className="stat-number">{selectedCount}</div>
@@ -630,7 +636,7 @@ function App() {
                                 : "status-offline"
                             }
                           >
-                            {device.status === "Online" ? "🟢" : "🔴"} {device.status}
+                            {device.status === "Online" ? "🟢" : "🔴"} {formatStatusText(device.status)}
                           </span>
                         </td>
                         <td>
