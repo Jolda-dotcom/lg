@@ -21,6 +21,7 @@ interface Group {
 function App() {
   const [activePage, setActivePage] = useState("devices");
   const [showModal, setShowModal] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deviceName, setDeviceName] = useState("");
   const [deviceIp, setDeviceIp] = useState("");
@@ -42,14 +43,6 @@ function App() {
   useEffect(() => {
     refreshAll();
   }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refreshAll();
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [backendUrl]);
 
   const refreshAll = async () => {
     setLoading(true);
@@ -92,6 +85,13 @@ function App() {
     setModalGroupId(null);
   };
 
+  const closeAddForm = () => {
+    setShowAddForm(false);
+    setShowModal(false);
+    setEditingId(null);
+    clearModalFields();
+  };
+
   const handleSave = async () => {
     if (!deviceName || !deviceIp || !deviceMac) {
       alert("Popuni sva polja");
@@ -105,57 +105,81 @@ function App() {
       groupId: modalGroupId,
     };
 
-    if (editingId !== null) {
-      await fetch(`${baseUrl}/devices/${editingId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+    try {
+      if (editingId !== null) {
+        const response = await fetch(`${baseUrl}/devices/${editingId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
 
-      setDevices(
-        devices.map((device) =>
-          device.id === editingId
-            ? {
-                ...device,
-                name: deviceName,
-                ip: deviceIp,
-                mac: deviceMac,
-                groupId: modalGroupId,
-                groupName:
-                  groups.find((group) => group.id === modalGroupId)
-                    ?.name || null,
-              }
-            : device
-        )
-      );
-      setEditingId(null);
-    } else {
-      const response = await fetch(`${baseUrl}/devices`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          alert(
+            `Greška pri uređivanju uređaja: ${errorData?.error || response.statusText}`
+          );
+          return;
+        }
 
-      const newDevice = await response.json();
+        setDevices(
+          devices.map((device) =>
+            device.id === editingId
+              ? {
+                  ...device,
+                  name: deviceName,
+                  ip: deviceIp,
+                  mac: deviceMac,
+                  groupId: modalGroupId,
+                  groupName:
+                    groups.find((group) => group.id === modalGroupId)
+                      ?.name || null,
+                }
+              : device
+          )
+        );
+        setEditingId(null);
+      } else {
+        const response = await fetch(`${baseUrl}/devices`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
 
-      setDevices([
-        ...devices,
-        {
-          ...newDevice,
-          selected: false,
-          groupId: modalGroupId,
-          groupName:
-            groups.find((group) => group.id === modalGroupId)?.name || null,
-        },
-      ]);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          alert(
+            `Greška pri dodavanju uređaja: ${errorData?.error || response.statusText}`
+          );
+          return;
+        }
+
+        const newDevice = await response.json();
+
+        setDevices([
+          ...devices,
+          {
+            ...newDevice,
+            selected: false,
+            groupId: modalGroupId,
+            groupName:
+              groups.find((group) => group.id === modalGroupId)?.name || null,
+          },
+        ]);
+      }
+
+      clearModalFields();
+      setShowAddForm(false);
+      setShowModal(false);
+      setStatusMessage("Uređaj je uspješno spremljen.");
+      setTimeout(() => setStatusMessage(""), 2500);
+    } catch (error) {
+      console.error("Spremanje uređaja nije uspjelo:", error);
+      alert("Greška pri spremanju uređaja. Provjeri je li backend pokrenut.");
     }
-
-    clearModalFields();
-    setShowModal(false);
   };
 
   const handleDelete = async (id: number) => {
@@ -301,7 +325,7 @@ function App() {
   const handleOpenModal = () => {
     setEditingId(null);
     clearModalFields();
-    setShowModal(true);
+    setShowAddForm(true);
   };
 
   const filteredDevices = devices.filter(
@@ -461,6 +485,50 @@ function App() {
                 </button>
               </div>
             </div>
+
+            {showAddForm && (
+              <div className="add-form-card">
+                <h2>Dodaj novi uređaj</h2>
+                <div className="form-grid">
+                  <input
+                    value={deviceName}
+                    onChange={(e) => setDeviceName(e.target.value)}
+                    placeholder="Naziv uređaja"
+                  />
+                  <input
+                    value={deviceIp}
+                    onChange={(e) => setDeviceIp(e.target.value)}
+                    placeholder="IP adresa"
+                  />
+                  <input
+                    value={deviceMac}
+                    onChange={(e) => setDeviceMac(e.target.value)}
+                    placeholder="MAC adresa"
+                  />
+                  <select
+                    value={modalGroupId ?? ""}
+                    onChange={(e) =>
+                      setModalGroupId(e.target.value ? Number(e.target.value) : null)
+                    }
+                  >
+                    <option value="">Bez grupe</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-buttons">
+                  <button type="button" className="save-btn" onClick={handleSave}>
+                    Sačuvaj
+                  </button>
+                  <button type="button" onClick={closeAddForm}>
+                    Otkaži
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="stats">
               <div className="stat-card">
