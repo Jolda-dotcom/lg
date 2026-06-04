@@ -53,6 +53,9 @@ web_modules/
 # Optional eslint cache
 .eslintcache
 
+# Backend database
+backend/data.db
+
 # Optional stylelint cache
 .stylelintcache
 
