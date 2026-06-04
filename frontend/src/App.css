@@ -185,14 +185,31 @@ select {
   color: var(--text);
 }
 
+.small-input,
+.small-select {
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  min-width: 160px;
+  max-width: 280px;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   margin-bottom: 20px;
 }
 
 .action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 150px;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
@@ -225,25 +242,25 @@ select {
   background: rgba(255, 255, 255, 0.96);
   border-radius: var(--radius);
   padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
+    margin: 0 auto 24px;
+    max-width: 720px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
 
-.add-form-card h2 {
-  margin-top: 0;
-  margin-bottom: 18px;
-}
+  .add-form-card h2 {
+    margin-top: 0;
+    margin-bottom: 16px;
+  }
 
-.form-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
-  margin-bottom: 18px;
-}
-
-.form-grid input,
-.form-grid select {
+  .form-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    margin-bottom: 18px;
+    max-width: 680px;
+    margin-left: auto;
+    margin-right: auto;
   width: 100%;
 }
 
@@ -296,6 +313,12 @@ select {
   border-radius: 10px;
   cursor: pointer;
   color: white;
+}
+
+.action-buttons-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .edit-btn {
@@ -356,11 +379,10 @@ select {
 }
 
 .modal {
-  width: min(100%, 520px);
-  background: var(--surface);
-  padding: 28px;
-  border-radius: 26px;
-  box-shadow: var(--shadow);
+    width: min(100%, 480px);
+    background: var(--surface);
+    padding: 24px;
+    border-radius: 24px;
   border: 1px solid var(--border);
 }
 

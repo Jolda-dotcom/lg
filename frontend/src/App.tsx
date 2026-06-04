@@ -31,12 +31,22 @@ function App() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupName, setGroupName] = useState("");
-  const [assignGroupId, setAssignGroupId] = useState<number | null>(null);
   const [backendUrl, setBackendUrl] = useState("http://localhost:5000");
   const [schedulerOn, setSchedulerOn] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showAssignGroupModal, setShowAssignGroupModal] = useState(false);
+  const [selectedAssignGroupId, setSelectedAssignGroupId] = useState<number | null>(null);
+  const [messageModal, setMessageModal] = useState<{
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => Promise<void> | void;
+  } | null>(null);
 
   const baseUrl = backendUrl.replace(/\/$/, "");
 
@@ -85,6 +95,32 @@ function App() {
     setModalGroupId(null);
   };
 
+  const showMessage = (title: string, message: string) => {
+    setMessageModal({ title, message });
+  };
+
+  const showConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => Promise<void> | void,
+    confirmText = "Potvrdi",
+    cancelText = "Odustani"
+  ) => {
+    setMessageModal({ title, message, confirmText, cancelText, onConfirm });
+  };
+
+  const closeMessageModal = () => setMessageModal(null);
+
+  const handleMessageConfirm = async () => {
+    if (!messageModal?.onConfirm) {
+      closeMessageModal();
+      return;
+    }
+
+    await messageModal.onConfirm();
+    closeMessageModal();
+  };
+
   const closeAddForm = () => {
     setShowAddForm(false);
     setShowModal(false);
@@ -94,7 +130,7 @@ function App() {
 
   const handleSave = async () => {
     if (!deviceName || !deviceIp || !deviceMac) {
-      alert("Popuni sva polja");
+      showMessage("Greška", "Popuni sva polja");
       return;
     }
 
@@ -117,7 +153,8 @@ function App() {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => null);
-          alert(
+          showMessage(
+            "Greška",
             `Greška pri uređivanju uređaja: ${errorData?.error || response.statusText}`
           );
           return;
@@ -151,7 +188,8 @@ function App() {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => null);
-          alert(
+          showMessage(
+            "Greška",
             `Greška pri dodavanju uređaja: ${errorData?.error || response.statusText}`
           );
           return;
@@ -178,20 +216,70 @@ function App() {
       setTimeout(() => setStatusMessage(""), 2500);
     } catch (error) {
       console.error("Spremanje uređaja nije uspjelo:", error);
-      alert("Greška pri spremanju uređaja. Provjeri je li backend pokrenut.");
+      showMessage("Greška", "Greška pri spremanju uređaja. Provjeri je li backend pokrenut.");
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Obrisati uređaj?")) {
-      return;
-    }
-
     await fetch(`${baseUrl}/devices/${id}`, {
       method: "DELETE",
     });
 
     setDevices(devices.filter((device) => device.id !== id));
+  };
+
+  const confirmDelete = async () => {
+    if (pendingDelete === null) return;
+    await handleDelete(pendingDelete);
+    setPendingDelete(null);
+    setShowDeleteConfirm(false);
+  };
+
+  const cancelDelete = () => {
+    setPendingDelete(null);
+    setShowDeleteConfirm(false);
+  };
+
+  const openAssignGroupModal = () => {
+    const selectedDevices = devices.filter((device) => device.selected);
+    if (selectedDevices.length === 0) {
+      showMessage("Greška", "Označi uređaje prije dodjeljivanja grupe.");
+      return;
+    }
+
+    if (groups.length === 0) {
+      showMessage("Greška", "Nema dostupnih grupa. Kreiraj grupu prvo.");
+      return;
+    }
+
+    setSelectedAssignGroupId(null);
+    setShowAssignGroupModal(true);
+  };
+
+  const assignGroupToSelected = async () => {
+    if (selectedAssignGroupId === null) {
+      showMessage("Greška", "Izaberi grupu za dodjelu.");
+      return;
+    }
+
+    await fetch(`${baseUrl}/groups/${selectedAssignGroupId}/devices`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        deviceIds: devices.filter((device) => device.selected).map((device) => device.id),
+      }),
+    });
+
+    await refreshAll();
+    setShowAssignGroupModal(false);
+    setSelectedAssignGroupId(null);
+  };
+
+  const cancelAssignGroup = () => {
+    setShowAssignGroupModal(false);
+    setSelectedAssignGroupId(null);
   };
 
   const toggleDevice = (id: number) => {
@@ -204,14 +292,11 @@ function App() {
     );
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelectedConfirmed = async () => {
     const selectedDevices = devices.filter((device) => device.selected);
 
     if (selectedDevices.length === 0) {
-      return;
-    }
-
-    if (!window.confirm("Obrisati označene uređaje?")) {
+      showMessage("Greška", "Nema označenih uređaja.");
       return;
     }
 
@@ -226,13 +311,30 @@ function App() {
     setDevices(devices.filter((device) => !device.selected));
   };
 
+  const handleDeleteSelected = () => {
+    const selectedDevices = devices.filter((device) => device.selected);
+
+    if (selectedDevices.length === 0) {
+      showMessage("Greška", "Nema označenih uređaja.");
+      return;
+    }
+
+    showConfirm(
+      "Potvrda brisanja",
+      "Obrisati označene uređaje?",
+      handleDeleteSelectedConfirmed,
+      "Obriši",
+      "Odustani"
+    );
+  };
+
   const handleRestartSelected = async () => {
     const selectedIds = devices
       .filter((device) => device.selected)
       .map((device) => device.id);
 
     if (selectedIds.length === 0) {
-      alert("Nema označenih uređaja.");
+      showMessage("Greška", "Nema označenih uređaja.");
       return;
     }
 
@@ -244,7 +346,7 @@ function App() {
       body: JSON.stringify({ ids: selectedIds }),
     });
 
-    alert("Restart zapocet za oznacene uredaje.");
+    showMessage("Info", "Restart zapocet za oznacene uredaje.");
   };
 
   const handleApplySettings = async () => {
@@ -253,7 +355,7 @@ function App() {
       .map((device) => device.id);
 
     if (selectedIds.length === 0) {
-      alert("Nema označenih uređaja.");
+      showMessage("Greška", "Nema označenih uređaja.");
       return;
     }
 
@@ -268,12 +370,12 @@ function App() {
       }),
     });
 
-    alert("Promjene poslane za oznacene uredaje.");
+    showMessage("Info", "Promjene poslane za oznacene uredaje.");
   };
 
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
-      alert("Unesite naziv grupe.");
+      showMessage("Greška", "Unesite naziv grupe.");
       return;
     }
 
@@ -287,28 +389,7 @@ function App() {
 
     setGroupName("");
     loadGroups();
-  };
-
-  const handleAssignSelectedToGroup = async () => {
-    const selectedIds = devices
-      .filter((device) => device.selected)
-      .map((device) => device.id);
-
-    if (selectedIds.length === 0 || assignGroupId === null) {
-      alert("Odaberite grupu i oznacite uredaje.");
-      return;
-    }
-
-    await fetch(`${baseUrl}/groups/${assignGroupId}/devices`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ deviceIds: selectedIds }),
-    });
-
-    await refreshAll();
-    alert("Označeni uređaji dodani u grupu.");
+    showMessage("Info", "Grupa je kreirana.");
   };
 
   const handleRestartGroup = async (groupId: number) => {
@@ -319,7 +400,7 @@ function App() {
       },
     });
 
-    alert("Restart grupe pokrenut.");
+    showMessage("Info", "Restart grupe pokrenut.");
   };
 
   const handleOpenModal = () => {
@@ -413,6 +494,7 @@ function App() {
             <h1>Grupe uređaja</h1>
             <div className="group-actions">
               <input
+                className="small-input"
                 placeholder="Naziv nove grupe"
                 value={groupName}
                 onChange={(e) => setGroupName(e.target.value)}
@@ -446,6 +528,7 @@ function App() {
             <div className="table-wrapper">
               <p>Backend URL:</p>
               <input
+                className="small-input"
                 value={backendUrl}
                 onChange={(e) => setBackendUrl(e.target.value)}
               />
@@ -453,6 +536,7 @@ function App() {
               <br />
               <p>Scheduler:</p>
               <select
+                className="small-select"
                 value={schedulerOn ? "on" : "off"}
                 onChange={(e) => setSchedulerOn(e.target.value === "on")}
               >
@@ -464,7 +548,7 @@ function App() {
               <button
                 type="button"
                 className="save-btn"
-                onClick={() => alert("Postavke spremljene lokalno.")}
+                onClick={() => showMessage("Info", "Postavke spremljene lokalno.")}
               >
                 Spremi postavke
               </button>
@@ -536,6 +620,79 @@ function App() {
               </div>
             )}
 
+            {showDeleteConfirm && (
+              <div className="modal-overlay">
+                <div className="modal">
+                  <h2>Potvrda brisanja</h2>
+                  <p>Da li želiš obrisati odabrani uređaj?</p>
+                  <div className="modal-buttons">
+                    <button type="button" className="save-btn" onClick={confirmDelete}>
+                      Da, obriši
+                    </button>
+                    <button type="button" onClick={cancelDelete}>
+                      Ne, poništi
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {showAssignGroupModal && (
+              <div className="modal-overlay">
+                <div className="modal">
+                  <h2>Dodaj u grupu</h2>
+                  <p>Izaberi grupu za označene uređaje:</p>
+                  <select
+                    value={selectedAssignGroupId ?? ""}
+                    onChange={(e) =>
+                      setSelectedAssignGroupId(
+                        e.target.value ? Number(e.target.value) : null
+                      )
+                    }
+                  >
+                    <option value="">Odaberi grupu</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="modal-buttons">
+                    <button type="button" className="save-btn" onClick={assignGroupToSelected}>
+                      Dodaj u grupu
+                    </button>
+                    <button type="button" onClick={cancelAssignGroup}>
+                      Otkaži
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {messageModal && (
+              <div className="modal-overlay">
+                <div className="modal">
+                  <h2>{messageModal.title}</h2>
+                  <p>{messageModal.message}</p>
+                  <div className="modal-buttons">
+                    {messageModal.onConfirm ? (
+                      <>
+                        <button type="button" onClick={closeMessageModal}>
+                          {messageModal.cancelText || "Odustani"}
+                        </button>
+                        <button type="button" className="save-btn" onClick={handleMessageConfirm}>
+                          {messageModal.confirmText || "Potvrdi"}
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="save-btn" onClick={closeMessageModal}>
+                        U redu
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="stats">
               <div className="stat-card">
                 <div className="stat-number">{devices.length}</div>
@@ -572,23 +729,7 @@ function App() {
               <button type="button" className="action-btn delete-selected-btn" onClick={handleDeleteSelected}>
                 Obriši odabrane
               </button>
-              <select
-                className="select-box"
-                value={assignGroupId ?? ""}
-                onChange={(e) =>
-                  setAssignGroupId(
-                    e.target.value ? Number(e.target.value) : null
-                  )
-                }
-              >
-                <option value="">Dodijeli grupu</option>
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
-              <button className="action-btn assign-btn" onClick={handleAssignSelectedToGroup}>
+              <button type="button" className="action-btn assign-btn" onClick={openAssignGroupModal}>
                 Dodaj u grupu
               </button>
             </div>
@@ -640,27 +781,32 @@ function App() {
                           </span>
                         </td>
                         <td>
-                          <button
-                            type="button"
-                            className="edit-btn"
-                            onClick={() => {
-                              setEditingId(device.id);
-                              setDeviceName(device.name);
-                              setDeviceIp(device.ip);
-                              setDeviceMac(device.mac);
-                              setModalGroupId(device.groupId ?? null);
-                              setShowModal(true);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="delete-btn"
-                            onClick={() => handleDelete(device.id)}
-                          >
-                            Obriši
-                          </button>
+                          <div className="action-buttons-row">
+                            <button
+                              type="button"
+                              className="edit-btn"
+                              onClick={() => {
+                                setEditingId(device.id);
+                                setDeviceName(device.name);
+                                setDeviceIp(device.ip);
+                                setDeviceMac(device.mac);
+                                setModalGroupId(device.groupId ?? null);
+                                setShowModal(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="delete-btn"
+                              onClick={() => {
+                                setPendingDelete(device.id);
+                                setShowDeleteConfirm(true);
+                              }}
+                            >
+                              Obriši
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
