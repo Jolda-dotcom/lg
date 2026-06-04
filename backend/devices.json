@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "name": "TV Sala",
+    "ip": "192.168.1.10",
+    "mac": "AA:BB:CC:DD:EE:01",
+    "status": "Online"
+  },
+  {
+    "id": 2,
+    "name": "TV Lobby",
+    "ip": "192.168.1.11",
+    "mac": "AA:BB:CC:DD:EE:02",
+    "status": "Offline"
+  }
+]
