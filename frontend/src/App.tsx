@@ -566,6 +566,22 @@ function App() {
     };
   });
 
+  const unassignedCount = devices.filter((device) => device.groupId === null).length;
+  const groupHealth = groupStatusSummary
+    .map((group) => ({
+      ...group,
+      offlineRatio: group.deviceCount ? group.offlineCount / group.deviceCount : 0,
+    }))
+    .sort((a, b) => b.offlineRatio - a.offlineRatio)
+    .slice(0, 4);
+
+  const recentOfflineEvents = recentDeviceEvents.filter((entry) => entry.status === "Offline").length;
+  const dashboardInsights = [
+    `Najviše offline ima ${groupHealth[0]?.name || "nijedna grupa"} (${groupHealth[0]?.offlineCount || 0}).`,
+    `U mreži je ${unassignedCount} uređaja bez grupe.`,
+    `Posljednjih 8 događaja: ${recentOfflineEvents} offline zapisa.`,
+  ];
+
   const onlineCount = devices.filter((device) => device.status === "Online").length;
   const offlineCount = devices.filter((device) => device.status === "Offline").length;
   const selectedCount = devices.filter((device) => device.selected).length;
@@ -635,6 +651,46 @@ function App() {
                   />
                 </div>
                 <div>{offlineCount} / {devices.length}</div>
+              </div>
+            </div>
+
+            <div className="dashboard-grid">
+              <div className="dashboard-panel">
+                <h2>Grupe koje trebaju pažnju</h2>
+                <p className="form-description">
+                  Prati grupe prema udjelu offline uređaja i brzo vidi gdje treba intervenirati.
+                </p>
+                {groupHealth.length === 0 ? (
+                  <p className="empty-log">Nema dovoljno podataka za grupnu analizu.</p>
+                ) : (
+                  <ul className="group-health-list">
+                    {groupHealth.map((group) => (
+                      <li key={group.id} className="group-health-item">
+                        <div className="group-health-title">
+                          <strong>{group.name}</strong>
+                          <span>{group.offlineCount}/{group.deviceCount} offline</span>
+                        </div>
+                        <div className="group-health-bar-container">
+                          <div
+                            className="group-health-bar"
+                            style={{ width: `${group.deviceCount ? (group.offlineRatio * 100).toFixed(0) : 0}%` }}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="dashboard-panel">
+                <h2>Operativni uvidi</h2>
+                <p className="form-description">
+                  Kratki pregled najvažnijih stanja i preporuka za akciju.
+                </p>
+                <ul className="insight-list">
+                  {dashboardInsights.map((insight, index) => (
+                    <li key={index}>{insight}</li>
+                  ))}
+                </ul>
               </div>
             </div>
           </>
