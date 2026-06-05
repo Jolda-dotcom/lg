@@ -95,6 +95,12 @@ function App() {
     setModalGroupId(null);
   };
 
+  const isValidIp = (ip: string) =>
+    /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(ip);
+
+  const isValidMac = (mac: string) =>
+    /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(mac);
+
   const showMessage = (title: string, message: string) => {
     setMessageModal({ title, message });
   };
@@ -131,6 +137,16 @@ function App() {
   const handleSave = async () => {
     if (!deviceName || !deviceIp || !deviceMac) {
       showMessage("Greška", "Popuni sva polja");
+      return;
+    }
+
+    if (!isValidIp(deviceIp)) {
+      showMessage("Greška", "IP adresa nije ispravna. Unesi format 192.168.1.10.");
+      return;
+    }
+
+    if (!isValidMac(deviceMac)) {
+      showMessage("Greška", "MAC adresa nije ispravna. Unesi format AA:BB:CC:DD:EE:FF.");
       return;
     }
 
@@ -217,6 +233,33 @@ function App() {
     } catch (error) {
       console.error("Spremanje uređaja nije uspjelo:", error);
       showMessage("Greška", "Greška pri spremanju uređaja. Provjeri je li backend pokrenut.");
+    }
+  };
+
+  const handlePowerOnAll = async () => {
+    try {
+      const response = await fetch(`${baseUrl}/devices/poweron-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showMessage(
+          "Greška",
+          `Nije uspjelo paljenje svih TV-a: ${errorData?.error || response.statusText}`
+        );
+        return;
+      }
+
+      const data = await response.json();
+      const successCount = data.results.filter((item: any) => item.poweredOn).length;
+      setStatusMessage(`Poslano WOL svim uređajima. Uspješno upaljeno ${successCount} od ${data.results.length}.`);
+      setTimeout(() => setStatusMessage(""), 4000);
+      await refreshAll();
+    } catch (error) {
+      console.error("Greska pri paljenju svih TV-a:", error);
+      showMessage("Greška", "Greška pri paljenju svih TV-a.");
     }
   };
 
@@ -403,6 +446,34 @@ function App() {
     showMessage("Info", "Restart grupe pokrenut.");
   };
 
+  const handlePowerOnGroup = async (groupId: number) => {
+    try {
+      const response = await fetch(`${baseUrl}/groups/${groupId}/poweron`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showMessage(
+          "Greška",
+          `Nije uspjelo paljenje grupe: ${errorData?.error || response.statusText}`
+        );
+        return;
+      }
+
+      const data = await response.json();
+      const count = data.results.filter((item: any) => item.poweredOn).length;
+      showMessage("Info", `Poslano paljenje grupe. Uspješno upaljeno ${count} uređaja.`);
+      await refreshAll();
+    } catch (error) {
+      console.error("Greška pri paljenju grupe:", error);
+      showMessage("Greška", "Greška pri paljenju grupe.");
+    }
+  };
+
   const handleOpenModal = () => {
     setEditingId(null);
     clearModalFields();
@@ -492,6 +563,11 @@ function App() {
         {activePage === "groups" && (
           <>
             <h1>Grupe uređaja</h1>
+            <p className="page-description">
+              Grupe služe za organizaciju TV uređaja u logične cjeline.
+              Dodaj uređaje u grupu kako bi mogao upravljati cijelom grupom odjednom,
+              primjerice restartati sve uređaje u toj grupi.
+            </p>
             <div className="group-actions">
               <input
                 className="small-input"
@@ -515,6 +591,13 @@ function App() {
                     onClick={() => handleRestartGroup(group.id)}
                   >
                     Restart grupe
+                  </button>
+                  <button
+                    type="button"
+                    className="action-btn poweron-btn"
+                    onClick={() => handlePowerOnGroup(group.id)}
+                  >
+                    Upali grupu
                   </button>
                 </div>
               ))}
@@ -570,6 +653,9 @@ function App() {
                 <button type="button" className="refresh-btn" onClick={refreshAll}>
                   Osvježi
                 </button>
+                <button type="button" className="action-btn poweron-btn" onClick={handlePowerOnAll}>
+                  Upali sve TV-e
+                </button>
                 <button type="button" className="add-btn" onClick={handleOpenModal}>
                   + Dodaj uređaj
                 </button>
@@ -578,36 +664,52 @@ function App() {
 
             {showAddForm && (
               <div className="add-form-card">
-                <h2>Dodaj novi uređaj</h2>
+                <h2>{editingId !== null ? "Uredi uređaj" : "Dodaj novi uređaj"}</h2>
+                <p className="form-description">
+                  Unesi ispravne podatke za TV uređaj. Polja su obavezna i moraju biti u formatu.
+                </p>
                 <div className="form-grid">
-                  <input
-                    value={deviceName}
-                    onChange={(e) => setDeviceName(e.target.value)}
-                    placeholder="Naziv uređaja"
-                  />
-                  <input
-                    value={deviceIp}
-                    onChange={(e) => setDeviceIp(e.target.value)}
-                    placeholder="IP adresa"
-                  />
-                  <input
-                    value={deviceMac}
-                    onChange={(e) => setDeviceMac(e.target.value)}
-                    placeholder="MAC adresa"
-                  />
-                  <select
-                    value={modalGroupId ?? ""}
-                    onChange={(e) =>
-                      setModalGroupId(e.target.value ? Number(e.target.value) : null)
-                    }
-                  >
-                    <option value="">Bez grupe</option>
-                    {groups.map((group) => (
-                      <option key={group.id} value={group.id}>
-                        {group.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="form-field">
+                    <input
+                      autoFocus
+                      value={deviceName}
+                      onChange={(e) => setDeviceName(e.target.value)}
+                      placeholder="Naziv uređaja, npr. TV Sala"
+                    />
+                    <small>Naziv uređaja koji će se prikazivati u listi.</small>
+                  </div>
+                  <div className="form-field">
+                    <input
+                      value={deviceIp}
+                      onChange={(e) => setDeviceIp(e.target.value)}
+                      placeholder="IP adresa, npr. 192.168.1.10"
+                    />
+                    <small>Unesi IP adresu uređaja u lokalnoj mreži.</small>
+                  </div>
+                  <div className="form-field">
+                    <input
+                      value={deviceMac}
+                      onChange={(e) => setDeviceMac(e.target.value)}
+                      placeholder="MAC adresa, npr. AA:BB:CC:DD:EE:FF"
+                    />
+                    <small>Unesi MAC adresu uređaja u HEX formatu.</small>
+                  </div>
+                  <div className="form-field">
+                    <select
+                      value={modalGroupId ?? ""}
+                      onChange={(e) =>
+                        setModalGroupId(e.target.value ? Number(e.target.value) : null)
+                      }
+                    >
+                      <option value="">Bez grupe</option>
+                      {groups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                    <small>Odaberi grupu ako želiš ovaj uređaj vezati uz grupu.</small>
+                  </div>
                 </div>
                 <div className="modal-buttons">
                   <button type="button" className="save-btn" onClick={handleSave}>
@@ -791,10 +893,10 @@ function App() {
                                 setDeviceIp(device.ip);
                                 setDeviceMac(device.mac);
                                 setModalGroupId(device.groupId ?? null);
-                                setShowModal(true);
+                                setShowAddForm(true);
                               }}
                             >
-                              Edit
+                              Uredi
                             </button>
                             <button
                               type="button"

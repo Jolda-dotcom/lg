@@ -12,5 +12,12 @@
     "ip": "192.168.1.11",
     "mac": "AA:BB:CC:DD:EE:02",
     "status": "Offline"
+  },
+  {
+    "id": 3,
+    "name": "TV Konferencija",
+    "ip": "192.168.1.12",
+    "mac": "AA:BB:CC:DD:EE:03",
+    "status": "Offline"
   }
 ]

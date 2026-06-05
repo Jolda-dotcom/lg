@@ -5,6 +5,7 @@ const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
 const ping = require("ping");
 const wol = require("wake_on_lan");
+const { powerOnAll } = require("./power-on-all");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -71,21 +72,19 @@ async function initDatabase() {
 
   const row = await getAsync("SELECT COUNT(*) AS count FROM devices");
 
-  if (row && row.count === 0) {
-    try {
-      const data = JSON.parse(fs.readFileSync(JSON_FILE, "utf8"));
+  try {
+    const data = JSON.parse(fs.readFileSync(JSON_FILE, "utf8"));
 
-      for (const device of data) {
-        await runAsync(
-          `INSERT INTO devices (name, ip, mac, status) VALUES (?, ?, ?, ?)`,
-          [device.name, device.ip, device.mac, device.status || "Offline"]
-        );
-      }
-
-      console.log("Imported devices from devices.json into SQLite.");
-    } catch (error) {
-      console.log("No JSON import performed:", error.message);
+    for (const device of data) {
+      await runAsync(
+        `INSERT OR IGNORE INTO devices (id, name, ip, mac, status) VALUES (?, ?, ?, ?, ?)`,
+        [device.id, device.name, device.ip, device.mac, device.status || "Offline"]
+      );
     }
+
+    console.log("Imported or verified devices from devices.json into SQLite.");
+  } catch (error) {
+    console.log("No JSON import performed:", error.message);
   }
 }
 
@@ -106,9 +105,14 @@ const wakeDevice = async (mac) =>
       return resolve(false);
     }
 
-    wol.wake(mac, (err) => {
-      resolve(!err);
-    });
+    try {
+      wol.wake(mac, (err) => {
+        resolve(!err);
+      });
+    } catch (error) {
+      console.warn(`Invalid MAC for WOL: ${mac}`, error.message);
+      resolve(false);
+    }
   });
 
 async function refreshStatus(device) {
@@ -261,6 +265,15 @@ app.post("/devices/settings", async (req, res) => {
   }
 });
 
+app.post("/devices/poweron-all", async (req, res) => {
+  try {
+    const results = await powerOnAll();
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/groups", async (req, res) => {
   try {
     const groups = await allAsync(
@@ -345,6 +358,27 @@ app.post("/groups/:id/restart", async (req, res) => {
         id: device.id,
         name: device.name,
         restarted: await wakeDevice(device.mac),
+      }))
+    );
+
+    res.json({ results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/groups/:id/poweron", async (req, res) => {
+  try {
+    const groupId = Number(req.params.id);
+    const devices = await allAsync(`SELECT * FROM devices WHERE group_id = ?`, [
+      groupId,
+    ]);
+
+    const results = await Promise.all(
+      devices.map(async (device) => ({
+        id: device.id,
+        name: device.name,
+        poweredOn: await wakeDevice(device.mac),
       }))
     );
 
