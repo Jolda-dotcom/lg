@@ -585,34 +585,59 @@ select {
 }
 
 .modal {
-    width: min(100%, 480px);
+    width: min(100%, 420px);
     background: var(--surface);
-    padding: 24px;
+    padding: 22px;
     border-radius: 24px;
-  border: 1px solid var(--border);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
 }
 
 .modal h2 {
   margin-top: 0;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   color: var(--text);
+  font-size: 1.35rem;
 }
 
 .modal input,
 .modal select {
   width: 100%;
-  padding: 14px 16px;
-  margin-bottom: 14px;
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: #f8fafc;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.modal select {
+  appearance: none;
 }
 
 .modal-buttons {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.modal-buttons button {
+  min-width: 100px;
+  padding: 10px 14px;
+  border-radius: 14px;
+}
+
+.modal-buttons button:first-child {
+  background: rgba(241, 245, 249, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: var(--text);
+}
+
+.modal-buttons button:last-child {
+  background: var(--accent);
+  color: white;
 }
 
 .modal-buttons button {

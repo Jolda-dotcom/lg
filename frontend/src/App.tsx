@@ -28,7 +28,6 @@ interface DeviceHistoryEntry {
 function App() {
   const [activePage, setActivePage] = useState("devices");
   const [showModal, setShowModal] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deviceName, setDeviceName] = useState("");
   const [deviceIp, setDeviceIp] = useState("");
@@ -158,13 +157,6 @@ function App() {
     closeMessageModal();
   };
 
-  const closeAddForm = () => {
-    setShowAddForm(false);
-    setShowModal(false);
-    setEditingId(null);
-    clearModalFields();
-  };
-
   const handleSave = async () => {
     if (!deviceName || !deviceIp || !deviceMac) {
       showMessage("Greška", "Popuni sva polja");
@@ -257,7 +249,6 @@ function App() {
       }
 
       clearModalFields();
-      setShowAddForm(false);
       setShowModal(false);
       setStatusMessage("Uređaj je uspješno spremljen.");
       setTimeout(() => setStatusMessage(""), 2500);
@@ -520,7 +511,7 @@ function App() {
   const handleOpenModal = () => {
     setEditingId(null);
     clearModalFields();
-    setShowAddForm(true);
+    setShowModal(true);
   };
 
   const filteredDevices = devices.filter((device) => {
@@ -935,65 +926,6 @@ function App() {
               </div>
             </div>
 
-            {showAddForm && (
-              <div className="add-form-card">
-                <h2>{editingId !== null ? "Uredi uređaj" : "Dodaj novi uređaj"}</h2>
-                <p className="form-description">
-                  Unesi ispravne podatke za TV uređaj. Polja su obavezna i moraju biti u formatu.
-                </p>
-                <div className="form-grid">
-                  <div className="form-field">
-                    <input
-                      autoFocus
-                      value={deviceName}
-                      onChange={(e) => setDeviceName(e.target.value)}
-                      placeholder="Naziv uređaja, npr. TV Sala"
-                    />
-                    <small>Naziv uređaja koji će se prikazivati u listi.</small>
-                  </div>
-                  <div className="form-field">
-                    <input
-                      value={deviceIp}
-                      onChange={(e) => setDeviceIp(e.target.value)}
-                      placeholder="IP adresa, npr. 192.168.1.10"
-                    />
-                    <small>Unesi IP adresu uređaja u lokalnoj mreži.</small>
-                  </div>
-                  <div className="form-field">
-                    <input
-                      value={deviceMac}
-                      onChange={(e) => setDeviceMac(e.target.value)}
-                      placeholder="MAC adresa, npr. AA:BB:CC:DD:EE:FF"
-                    />
-                    <small>Unesi MAC adresu uređaja u HEX formatu.</small>
-                  </div>
-                  <div className="form-field">
-                    <select
-                      value={modalGroupId ?? ""}
-                      onChange={(e) =>
-                        setModalGroupId(e.target.value ? Number(e.target.value) : null)
-                      }
-                    >
-                      <option value="">Bez grupe</option>
-                      {groups.map((group) => (
-                        <option key={group.id} value={group.id}>
-                          {group.name}
-                        </option>
-                      ))}
-                    </select>
-                    <small>Odaberi grupu ako želiš ovaj uređaj vezati uz grupu.</small>
-                  </div>
-                </div>
-                <div className="modal-buttons">
-                  <button type="button" className="save-btn" onClick={handleSave}>
-                    Sačuvaj
-                  </button>
-                  <button type="button" onClick={closeAddForm}>
-                    Otkaži
-                  </button>
-                </div>
-              </div>
-            )}
 
             {showDeleteConfirm && (
               <div className="modal-overlay">
@@ -1227,7 +1159,7 @@ function App() {
                                 setDeviceIp(device.ip);
                                 setDeviceMac(device.mac);
                                 setModalGroupId(device.groupId ?? null);
-                                setShowAddForm(true);
+                                setShowModal(true);
                               }}
                             >
                               Uredi
