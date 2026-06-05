@@ -659,22 +659,37 @@ function App() {
                 <h2>Distribuacija statusa uređaja</h2>
                 <svg className="pie-chart" viewBox="0 0 200 200" style={{ maxWidth: '300px', margin: '20px auto' }}>
                   <circle cx="100" cy="100" r="90" fill="none" stroke="#e2e8f0" strokeWidth="60" />
-                  <circle
-                    cx="100"
-                    cy="100"
-                    r="90"
-                    fill="none"
-                    stroke="#22c55e"
-                    strokeWidth="60"
-                    strokeDasharray={`${(onlineCount / devices.length) * 565.5} 565.5`}
-                    strokeLinecap="round"
-                    transform="rotate(-90 100 100)"
-                  />
+                  {onlineCount > 0 && (
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="90"
+                      fill="none"
+                      stroke="#22c55e"
+                      strokeWidth="60"
+                      strokeDasharray={`${(onlineCount / devices.length) * 565.5} 565.5`}
+                      strokeLinecap="round"
+                      transform="rotate(-90 100 100)"
+                    />
+                  )}
+                  {offlineCount > 0 && (
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="90"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="60"
+                      strokeDasharray={`${(offlineCount / devices.length) * 565.5} 565.5`}
+                      strokeLinecap="round"
+                      transform={`rotate(${(onlineCount / devices.length) * 360 - 90} 100 100)`}
+                    />
+                  )}
                   <text x="100" y="90" textAnchor="middle" fontSize="24" fontWeight="700" fill="#1f2937">
-                    {onlineCount}
+                    {devices.length}
                   </text>
                   <text x="100" y="115" textAnchor="middle" fontSize="14" fill="#4b5563">
-                    na mreži
+                    uređaja
                   </text>
                 </svg>
                 <div className="pie-legend">
