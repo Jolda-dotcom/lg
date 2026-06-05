@@ -586,6 +586,11 @@ function App() {
   const offlineCount = devices.filter((device) => device.status === "Offline").length;
   const selectedCount = devices.filter((device) => device.selected).length;
 
+  const healthScore = devices.length > 0 ? Math.round((onlineCount / devices.length) * 100) : 0;
+  const healthStatus = healthScore >= 80 ? "excellent" : healthScore >= 60 ? "good" : healthScore >= 40 ? "warning" : "critical";
+  const criticalOfflineDevices = devices.filter((device) => device.status === "Offline").slice(0, 3);
+  const hasCritical = offlineCount > 0;
+
   const formatStatusText = (status: string) => {
     if (status === "Online") return "Na mreži";
     if (status === "Offline") return "Van mreže";
@@ -625,6 +630,42 @@ function App() {
                 <div className="stat-number">{groups.length}</div>
                 <div>Grupe</div>
               </div>
+            </div>
+
+            {hasCritical && (
+              <div className={`alarm-notification alarm-${healthStatus}`}>
+                <div className="alarm-header">
+                  <span className="alarm-icon">⚠️</span>
+                  <span className="alarm-title">UPOZORENJE - Kritični uređaji offline</span>
+                </div>
+                <div className="alarm-devices">
+                  {criticalOfflineDevices.map((device) => (
+                    <div key={device.id} className="alarm-device-item">
+                      <span className="alarm-dot"></span>
+                      <span>{device.name}</span>
+                      <span className="alarm-ip">({device.ip})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="health-score-card">
+              <div className="health-header">
+                <h3>Zdravlje mreže</h3>
+                <div className={`health-badge health-${healthStatus}`}>
+                  {healthScore}%
+                </div>
+              </div>
+              <div className="health-bar">
+                <div className="health-bar-fill" style={{ width: `${healthScore}%` }}></div>
+              </div>
+              <p className="health-text">
+                {healthStatus === "excellent" && "Mreža je u odličnom stanju! Svi uređaji su dostupni."}
+                {healthStatus === "good" && "Mreža je u dobrom stanju. Većina uređaja je dostupna."}
+                {healthStatus === "warning" && "Mreža zahtjeva pažnju. Nekoliko uređaja je van mreže."}
+                {healthStatus === "critical" && "Mreža je u kritičnom stanju! Mnogi uređaji su van mreže."}
+              </p>
             </div>
 
             <div className="dashboard-charts">
