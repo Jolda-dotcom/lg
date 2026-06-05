@@ -654,6 +654,81 @@ function App() {
               </div>
             </div>
 
+            {devices.length > 0 && (
+              <div className="pie-chart-container">
+                <h2>Distribuacija statusa uređaja</h2>
+                <svg className="pie-chart" viewBox="0 0 200 200" style={{ maxWidth: '300px', margin: '20px auto' }}>
+                  <circle cx="100" cy="100" r="90" fill="none" stroke="#e2e8f0" strokeWidth="60" />
+                  <circle
+                    cx="100"
+                    cy="100"
+                    r="90"
+                    fill="none"
+                    stroke="#22c55e"
+                    strokeWidth="60"
+                    strokeDasharray={`${(onlineCount / devices.length) * 565.5} 565.5`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 100 100)"
+                  />
+                  <text x="100" y="90" textAnchor="middle" fontSize="24" fontWeight="700" fill="#1f2937">
+                    {onlineCount}
+                  </text>
+                  <text x="100" y="115" textAnchor="middle" fontSize="14" fill="#4b5563">
+                    na mreži
+                  </text>
+                </svg>
+                <div className="pie-legend">
+                  <div className="pie-legend-item">
+                    <span className="pie-legend-dot online"></span>
+                    <span>Na mreži ({onlineCount})</span>
+                  </div>
+                  <div className="pie-legend-item">
+                    <span className="pie-legend-dot offline"></span>
+                    <span>Van mreže ({offlineCount})</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {groupStatusSummary.length > 0 && (
+              <div className="circular-progress-container">
+                <h2>Zdravlje grupa po dostupnosti</h2>
+                <div className="circular-grid">
+                  {groupStatusSummary.slice(0, 4).map((group) => {
+                    const healthPercent = group.deviceCount ? (group.onlineCount / group.deviceCount) * 100 : 0;
+                    const circumference = 2 * Math.PI * 45;
+                    const strokeDashoffset = circumference - (healthPercent / 100) * circumference;
+                    return (
+                      <div key={group.id} className="circular-progress-card">
+                        <svg className="circular-progress" viewBox="0 0 100 100">
+                          <circle cx="50" cy="50" r="45" fill="none" stroke="#e2e8f0" strokeWidth="8" />
+                          <circle
+                            cx="50"
+                            cy="50"
+                            r="45"
+                            fill="none"
+                            stroke={healthPercent > 50 ? '#22c55e' : healthPercent > 20 ? '#f59e0b' : '#ef4444'}
+                            strokeWidth="8"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={strokeDashoffset}
+                            strokeLinecap="round"
+                            transform="rotate(-90 50 50)"
+                          />
+                          <text x="50" y="50" textAnchor="middle" dy="0.3em" fontSize="20" fontWeight="700" fill="#1f2937">
+                            {Math.round(healthPercent)}%
+                          </text>
+                        </svg>
+                        <div className="circular-progress-label">
+                          <strong>{group.name}</strong>
+                          <small>{group.onlineCount}/{group.deviceCount}</small>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="dashboard-grid">
               <div className="dashboard-panel">
                 <h2>Grupe koje trebaju pažnju</h2>
