@@ -20,6 +20,7 @@ interface Group {
 
 interface DeviceHistoryEntry {
   timestamp: string;
+  time: number;
   status: string;
   note: string;
 }
@@ -104,8 +105,10 @@ function App() {
   const recordDeviceEvent = (device: Device, note: string) => {
     setDeviceHistory((prevHistory) => {
       const existing = prevHistory[device.id] || [];
+      const now = new Date();
       const entry: DeviceHistoryEntry = {
-        timestamp: new Date().toLocaleTimeString(),
+        timestamp: now.toLocaleTimeString(),
+        time: now.getTime(),
         status: device.status,
         note,
       };
@@ -542,6 +545,17 @@ function App() {
     ? deviceHistory[selectedDevice.id] || []
     : [];
 
+  const recentDeviceEvents = Object.entries(deviceHistory)
+    .flatMap(([deviceId, entries]) =>
+      entries.map((entry) => ({
+        deviceId: Number(deviceId),
+        ...entry,
+        deviceName: devices.find((device) => device.id === Number(deviceId))?.name || `Uređaj ${deviceId}`,
+      }))
+    )
+    .sort((a, b) => b.time - a.time)
+    .slice(0, 8);
+
   const groupStatusSummary = groups.map((group) => {
     const members = devices.filter((device) => device.groupId === group.id);
     const onlineCount = members.filter((device) => device.status === "Online").length;
@@ -884,6 +898,24 @@ function App() {
                 <div className="stat-number">{selectedCount}</div>
                 <div>Odabrano</div>
               </div>
+            </div>
+
+            <div className="activity-feed-card">
+              <h2>Aktivnosti uređaja</h2>
+              <p className="form-description">
+                Prati posljednjih 8 automatskih i manuelnih događaja za uređaje.
+              </p>
+              {recentDeviceEvents.length === 0 ? (
+                <p className="empty-log">Nema zabilježenih aktivnosti još.</p>
+              ) : (
+                <ul className="activity-log">
+                  {recentDeviceEvents.map((entry) => (
+                    <li key={`${entry.deviceId}-${entry.time}`}>
+                      <strong>{entry.timestamp}</strong> - <span>{entry.deviceName}</span> - {entry.status} - {entry.note}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <input
