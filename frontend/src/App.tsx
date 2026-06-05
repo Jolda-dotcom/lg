@@ -18,6 +18,12 @@ interface Group {
   deviceCount: number;
 }
 
+interface DeviceHistoryEntry {
+  timestamp: string;
+  status: string;
+  note: string;
+}
+
 function App() {
   const [activePage, setActivePage] = useState("devices");
   const [showModal, setShowModal] = useState(false);
@@ -31,6 +37,10 @@ function App() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupName, setGroupName] = useState("");
+  const [deviceHistory, setDeviceHistory] = useState<Record<number, DeviceHistoryEntry[]>>({});
+  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
+  const [groupFilter, setGroupFilter] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [backendUrl, setBackendUrl] = useState("http://localhost:5000");
   const [schedulerOn, setSchedulerOn] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
@@ -67,12 +77,15 @@ function App() {
     try {
       const response = await fetch(`${baseUrl}/devices`);
       const data = await response.json();
-      setDevices(
-        data.map((device: any) => ({
-          ...device,
-          selected: false,
-        }))
-      );
+      const mappedDevices = data.map((device: any) => ({
+        ...device,
+        selected: false,
+      }));
+
+      setDevices(mappedDevices);
+      mappedDevices.forEach((device: any) => {
+        recordDeviceEvent(device, `Automatska provjera statusa: ${device.status}`);
+      });
     } catch (error) {
       console.error("Učitavanje uređaja nije uspjelo:", error);
     }
@@ -86,6 +99,21 @@ function App() {
     } catch (error) {
       console.error("Ucitavanje grupa nije uspjelo:", error);
     }
+  };
+
+  const recordDeviceEvent = (device: Device, note: string) => {
+    setDeviceHistory((prevHistory) => {
+      const existing = prevHistory[device.id] || [];
+      const entry: DeviceHistoryEntry = {
+        timestamp: new Date().toLocaleTimeString(),
+        status: device.status,
+        note,
+      };
+      return {
+        ...prevHistory,
+        [device.id]: [entry, ...existing].slice(0, 10),
+      };
+    });
   };
 
   const clearModalFields = () => {
@@ -269,6 +297,18 @@ function App() {
     });
 
     setDevices(devices.filter((device) => device.id !== id));
+
+    if (selectedDeviceId === id) {
+      setSelectedDeviceId(null);
+    }
+  };
+
+  const handleViewDevice = async (id: number) => {
+    setSelectedDeviceId(id);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedDeviceId(null);
   };
 
   const confirmDelete = async () => {
@@ -480,11 +520,37 @@ function App() {
     setShowAddForm(true);
   };
 
-  const filteredDevices = devices.filter(
-    (device) =>
+  const filteredDevices = devices.filter((device) => {
+    const matchesSearch =
       device.name.toLowerCase().includes(search.toLowerCase()) ||
-      device.ip.includes(search)
-  );
+      device.ip.includes(search);
+
+    const matchesGroup =
+      groupFilter === null ||
+      (groupFilter === -1 ? device.groupId === null : device.groupId === groupFilter);
+
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "online" && device.status === "Online") ||
+      (statusFilter === "offline" && device.status === "Offline");
+
+    return matchesSearch && matchesGroup && matchesStatus;
+  });
+
+  const selectedDevice = devices.find((device) => device.id === selectedDeviceId) || null;
+  const selectedDeviceHistory = selectedDevice
+    ? deviceHistory[selectedDevice.id] || []
+    : [];
+
+  const groupStatusSummary = groups.map((group) => {
+    const members = devices.filter((device) => device.groupId === group.id);
+    const onlineCount = members.filter((device) => device.status === "Online").length;
+    return {
+      ...group,
+      onlineCount,
+      offlineCount: members.length - onlineCount,
+    };
+  });
 
   const onlineCount = devices.filter((device) => device.status === "Online").length;
   const offlineCount = devices.filter((device) => device.status === "Offline").length;
@@ -581,24 +647,30 @@ function App() {
             </div>
 
             <div className="group-list">
-              {groups.map((group) => (
+              {groupStatusSummary.map((group) => (
                 <div className="group-card" key={group.id}>
                   <div className="group-card-title">{group.name}</div>
                   <div>{group.deviceCount} uređaja</div>
-                  <button
-                    type="button"
-                    className="action-btn restart-btn"
-                    onClick={() => handleRestartGroup(group.id)}
-                  >
-                    Restart grupe
-                  </button>
-                  <button
-                    type="button"
-                    className="action-btn poweron-btn"
-                    onClick={() => handlePowerOnGroup(group.id)}
-                  >
-                    Upali grupu
-                  </button>
+                  <div className="group-metrics">
+                    <span>Online: {group.onlineCount}</span>
+                    <span>Offline: {group.offlineCount}</span>
+                  </div>
+                  <div className="group-card-actions">
+                    <button
+                      type="button"
+                      className="action-btn restart-btn"
+                      onClick={() => handleRestartGroup(group.id)}
+                    >
+                      Restart grupe
+                    </button>
+                    <button
+                      type="button"
+                      className="action-btn poweron-btn"
+                      onClick={() => handlePowerOnGroup(group.id)}
+                    >
+                      Upali grupu
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -821,6 +893,42 @@ function App() {
               onChange={(e) => setSearch(e.target.value)}
             />
 
+            <div className="filters">
+              <select
+                className="small-select select-box"
+                value={groupFilter ?? ""}
+                onChange={(e) =>
+                  setGroupFilter(e.target.value ? Number(e.target.value) : null)
+                }
+              >
+                <option value="">Sve grupe</option>
+                <option value="-1">Bez grupe</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="small-select select-box"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">Sve statusi</option>
+                <option value="online">Samo online</option>
+                <option value="offline">Samo offline</option>
+              </select>
+              {selectedDevice && (
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={handleClearSelection}
+                >
+                  Zatvori detalje
+                </button>
+              )}
+            </div>
+
             <div className="actions">
               <button type="button" className="action-btn restart-btn" onClick={handleRestartSelected}>
                 Restart označenih
@@ -886,6 +994,13 @@ function App() {
                           <div className="action-buttons-row">
                             <button
                               type="button"
+                              className="view-btn"
+                              onClick={() => handleViewDevice(device.id)}
+                            >
+                              Pogledaj
+                            </button>
+                            <button
+                              type="button"
                               className="edit-btn"
                               onClick={() => {
                                 setEditingId(device.id);
@@ -916,6 +1031,48 @@ function App() {
                 </tbody>
               </table>
             </div>
+            {selectedDevice && (
+              <div className="device-details-card">
+                <h2>Detalji uređaja</h2>
+                <p className="form-description">
+                  Brzi pregled statusa, grupe i zapisa posljednjih automatskih provjera.
+                </p>
+                <div className="detail-row">
+                  <span>Naziv:</span>
+                  <strong>{selectedDevice.name}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>IP adresa:</span>
+                  <strong>{selectedDevice.ip}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>MAC adresa:</span>
+                  <strong>{selectedDevice.mac}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Grupa:</span>
+                  <strong>{selectedDevice.groupName || "Bez grupe"}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Status:</span>
+                  <strong>{formatStatusText(selectedDevice.status)}</strong>
+                </div>
+                <div className="history-section">
+                  <h3>Posljednji zapisi</h3>
+                  <ul>
+                    {selectedDeviceHistory.length === 0 ? (
+                      <li>Nema zapisa za ovaj uređaj.</li>
+                    ) : (
+                      selectedDeviceHistory.map((entry, index) => (
+                        <li key={`${selectedDevice.id}-${index}`}>
+                          <strong>{entry.timestamp}</strong> - {entry.status} - {entry.note}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
