@@ -223,6 +223,37 @@ app.post("/devices/:id/ping", async (req, res) => {
   }
 });
 
+
+app.post("/devices/:id/poweroff", async (req, res) => {
+  try {
+    const device = await getAsync(
+      "SELECT * FROM devices WHERE id = ?",
+      [req.params.id]
+    );
+
+    if (!device) {
+      return res.status(404).json({
+        error: "Device not found",
+      });
+    }
+
+    console.log(
+      `Power off requested for ${device.name} (${device.ip})`
+    );
+
+    res.json({
+      success: true,
+      message: "Power off endpoint created",
+      device: device.name,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+
 app.post("/devices/restart", async (req, res) => {
   try {
     const { ids } = req.body;
