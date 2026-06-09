@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 interface Device {
@@ -7,6 +7,7 @@ interface Device {
   ip: string;
   mac: string;
   status: string;
+  powerState: string;
   selected: boolean;
   groupId: number | null;
   groupName?: string | null;
@@ -41,11 +42,13 @@ function App() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
   const [groupFilter, setGroupFilter] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [powerFilter, setPowerFilter] = useState("all");
   const [backendUrl, setBackendUrl] = useState("http://localhost:5000");
   const [schedulerOn, setSchedulerOn] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState("");
+  const initialLoadRef = useRef(false);
   const [pendingDelete, setPendingDelete] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showAssignGroupModal, setShowAssignGroupModal] = useState(false);
@@ -61,6 +64,8 @@ function App() {
   const baseUrl = backendUrl.replace(/\/$/, "");
 
   useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
     refreshAll();
   }, []);
 
@@ -79,6 +84,7 @@ function App() {
       const data = await response.json();
       const mappedDevices = data.map((device: any) => ({
         ...device,
+        powerState: device.powerState || device.power_state || "Off",
         selected: false,
       }));
 
@@ -240,6 +246,7 @@ function App() {
           ...devices,
           {
             ...newDevice,
+            powerState: newDevice.powerState || newDevice.power_state || "Off",
             selected: false,
             groupId: modalGroupId,
             groupName:
@@ -275,7 +282,6 @@ function App() {
       }
 
       const data = await response.json();
-      console.log(data)
       const successCount = data.results.filter((item: any) => item.poweredOn).length;
       setStatusMessage(`Poslano WOL svim uređajima. Uspješno upaljeno ${successCount} od ${data.results.length}.`);
       setTimeout(() => setStatusMessage(""), 4000);
@@ -283,6 +289,33 @@ function App() {
     } catch (error) {
       console.error("Greska pri paljenju svih TV-a:", error);
       showMessage("Greška", "Greška pri paljenju svih TV-a.");
+    }
+  };
+
+  const handlePowerOffAll = async () => {
+    try {
+      const response = await fetch(`${baseUrl}/devices/poweroff-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showMessage(
+          "Greška",
+          `Nije uspjelo gašenje svih TV-a: ${errorData?.error || response.statusText}`
+        );
+        return;
+      }
+
+      const data = await response.json();
+      const successCount = data.results.filter((item: any) => item.poweredOff).length;
+      setStatusMessage(`Poslano gašenje svih uređaja. Ugašeno ${successCount} od ${data.results.length}.`);
+      setTimeout(() => setStatusMessage(""), 4000);
+      await refreshAll();
+    } catch (error) {
+      console.error("Greska pri gašenju svih TV-a:", error);
+      showMessage("Greška", "Greška pri gašenju svih TV-a.");
     }
   };
 
@@ -529,7 +562,12 @@ function App() {
       (statusFilter === "online" && device.status === "Online") ||
       (statusFilter === "offline" && device.status === "Offline");
 
-    return matchesSearch && matchesGroup && matchesStatus;
+    const matchesPower =
+      powerFilter === "all" ||
+      (powerFilter === "on" && device.powerState === "On") ||
+      (powerFilter === "off" && device.powerState === "Off");
+
+    return matchesSearch && matchesGroup && matchesStatus && matchesPower;
   });
 
   const selectedDevice = devices.find((device) => device.id === selectedDeviceId) || null;
@@ -576,6 +614,7 @@ function App() {
 
   const onlineCount = devices.filter((device) => device.status === "Online").length;
   const offlineCount = devices.filter((device) => device.status === "Offline").length;
+  const poweredOnCount = devices.filter((device) => device.powerState === "On").length;
   const selectedCount = devices.filter((device) => device.selected).length;
 
   const healthScore = devices.length > 0 ? Math.round((onlineCount / devices.length) * 100) : 0;
@@ -587,6 +626,12 @@ function App() {
     if (status === "Online") return "Na mreži";
     if (status === "Offline") return "Van mreže";
     return status;
+  };
+
+  const formatPowerText = (powerState: string) => {
+    if (powerState === "On") return "Uključen";
+    if (powerState === "Off") return "Ugašen";
+    return powerState;
   };
 
   return (
@@ -921,6 +966,9 @@ function App() {
                 <button type="button" className="action-btn poweron-btn" onClick={handlePowerOnAll}>
                   Upali sve TV-e
                 </button>
+                <button type="button" className="action-btn poweroff-btn" onClick={handlePowerOffAll}>
+                  Isključi sve TV-e
+                </button>
                 <button type="button" className="add-btn" onClick={handleOpenModal}>
                   + Dodaj uređaj
                 </button>
@@ -1015,6 +1063,10 @@ function App() {
                 <div>Van mreže</div>
               </div>
               <div className="stat-card">
+                <div className="stat-number">{poweredOnCount}</div>
+                <div>Uključeno</div>
+              </div>
+              <div className="stat-card">
                 <div className="stat-number">{selectedCount}</div>
                 <div>Odabrano</div>
               </div>
@@ -1070,6 +1122,15 @@ function App() {
                 <option value="online">Samo online</option>
                 <option value="offline">Samo offline</option>
               </select>
+              <select
+                className="small-select select-box"
+                value={powerFilter}
+                onChange={(e) => setPowerFilter(e.target.value)}
+              >
+                <option value="all">Sve napajanja</option>
+                <option value="on">Samo upaljeni</option>
+                <option value="off">Samo ugašeni</option>
+              </select>
               {selectedDevice && (
                 <button
                   type="button"
@@ -1105,6 +1166,7 @@ function App() {
                     <th>IP Adresa</th>
                     <th>MAC Adresa</th>
                     <th>Grupa</th>
+                    <th>Napajanje</th>
                     <th>Status</th>
                     <th>Akcije</th>
                   </tr>
@@ -1131,6 +1193,17 @@ function App() {
                         <td>{device.ip}</td>
                         <td>{device.mac}</td>
                         <td>{device.groupName || "-"}</td>
+                        <td>
+                          <span
+                            className={
+                              device.powerState === "On"
+                                ? "status-online"
+                                : "status-offline"
+                            }
+                          >
+                            {device.powerState === "On" ? "💡" : "⛔"} {formatPowerText(device.powerState)}
+                          </span>
+                        </td>
                         <td>
                           <span
                             className={
@@ -1204,6 +1277,10 @@ function App() {
                 <div className="detail-row">
                   <span>Grupa:</span>
                   <strong>{selectedDevice.groupName || "Bez grupe"}</strong>
+                </div>
+                <div className="detail-row">
+                  <span>Napajanje:</span>
+                  <strong>{formatPowerText(selectedDevice.powerState)}</strong>
                 </div>
                 <div className="detail-row">
                   <span>Status:</span>

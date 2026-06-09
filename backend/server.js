@@ -64,11 +64,17 @@ async function initDatabase() {
       ip TEXT NOT NULL,
       mac TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'Offline',
+      power_state TEXT NOT NULL DEFAULT 'Off',
       group_id INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE SET NULL
     )`
   );
+
+  const existingColumns = await allAsync(`PRAGMA table_info(devices)`);
+  if (!existingColumns.some((column) => column.name === "power_state")) {
+    await runAsync(`ALTER TABLE devices ADD COLUMN power_state TEXT NOT NULL DEFAULT 'Off'`);
+  }
 
   const row = await getAsync("SELECT COUNT(*) AS count FROM devices");
 
@@ -77,8 +83,15 @@ async function initDatabase() {
 
     for (const device of data) {
       await runAsync(
-        `INSERT OR IGNORE INTO devices (id, name, ip, mac, status) VALUES (?, ?, ?, ?, ?)`,
-        [device.id, device.name, device.ip, device.mac, device.status || "Offline"]
+        `INSERT OR IGNORE INTO devices (id, name, ip, mac, status, power_state) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          device.id,
+          device.name,
+          device.ip,
+          device.mac,
+          device.status || "Offline",
+          device.powerState || device.power_state || "Off",
+        ]
       );
     }
 
@@ -135,7 +148,7 @@ app.use(express.json());
 app.get("/devices", async (req, res) => {
   try {
     const devices = await allAsync(
-      `SELECT d.*, g.name AS groupName FROM devices d
+      `SELECT d.*, d.power_state AS powerState, g.name AS groupName FROM devices d
        LEFT JOIN groups g ON d.group_id = g.id
        ORDER BY d.name COLLATE NOCASE`
     );
@@ -159,12 +172,12 @@ app.post("/devices", async (req, res) => {
     }
 
     const result = await runAsync(
-      `INSERT INTO devices (name, ip, mac, status, group_id) VALUES (?, ?, ?, ?, ?)`,
-      [name, ip, mac, "Offline", groupId || null]
+      `INSERT INTO devices (name, ip, mac, status, power_state, group_id) VALUES (?, ?, ?, ?, ?, ?)`,
+      [name, ip, mac, "Offline", "Off", groupId || null]
     );
 
     const device = await getAsync(
-      `SELECT d.*, g.name AS groupName FROM devices d
+      `SELECT d.*, d.power_state AS powerState, g.name AS groupName FROM devices d
        LEFT JOIN groups g ON d.group_id = g.id WHERE d.id = ?`,
       [result.lastID]
     );
@@ -237,13 +250,13 @@ app.post("/devices/:id/poweroff", async (req, res) => {
       });
     }
 
-    console.log(
-      `Power off requested for ${device.name} (${device.ip})`
-    );
+    await runAsync(`UPDATE devices SET power_state = 'Off' WHERE id = ?`, [device.id]);
+
+    console.log(`Power off requested for ${device.name} (${device.ip})`);
 
     res.json({
       success: true,
-      message: "Power off endpoint created",
+      message: "Power off completed",
       device: device.name,
     });
   } catch (error) {
@@ -299,6 +312,28 @@ app.post("/devices/settings", async (req, res) => {
 app.post("/devices/poweron-all", async (req, res) => {
   try {
     const results = await powerOnAll();
+    await Promise.all(
+      results
+        .filter((item) => item.poweredOn)
+        .map((item) =>
+          runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [item.id])
+        )
+    );
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/devices/poweroff-all", async (req, res) => {
+  try {
+    const devices = await allAsync(`SELECT id, name, ip FROM devices`);
+    await runAsync(`UPDATE devices SET power_state = 'Off'`);
+    const results = devices.map((device) => ({
+      id: device.id,
+      name: device.name,
+      poweredOff: true,
+    }));
     res.json({ success: true, results });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -406,11 +441,17 @@ app.post("/groups/:id/poweron", async (req, res) => {
     ]);
 
     const results = await Promise.all(
-      devices.map(async (device) => ({
-        id: device.id,
-        name: device.name,
-        poweredOn: await wakeDevice(device.mac),
-      }))
+      devices.map(async (device) => {
+        const poweredOn = await wakeDevice(device.mac);
+        if (poweredOn) {
+          await runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [device.id]);
+        }
+        return {
+          id: device.id,
+          name: device.name,
+          poweredOn,
+        };
+      })
     );
 
     res.json({ results });

@@ -16,6 +16,17 @@ const allAsync = (sql, params = []) =>
     });
   });
 
+const runAsync = (sql, params = []) =>
+  new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(this);
+      }
+    });
+  });
+
 const wakeDevice = (mac) =>
   new Promise((resolve) => {
     if (!mac) {
@@ -38,15 +49,25 @@ async function powerOnAll() {
   );
 
   const results = await Promise.all(
-    devices.map(async (device) => ({
-      id: device.id,
-      name: device.name,
-      ip: device.ip,
-      mac: device.mac,
-      poweredOn: await wakeDevice(device.mac),
-    }))
+    devices.map(async (device) => {
+      const poweredOn = await wakeDevice(device.mac);
+      if (poweredOn) {
+        try {
+          await runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [device.id]);
+        } catch (err) {
+          console.warn(`Failed to update power_state for device ${device.id}:`, err.message);
+        }
+      }
+      return {
+        id: device.id,
+        name: device.name,
+        ip: device.ip,
+        mac: device.mac,
+        poweredOn,
+      };
+    })
   );
-console.log(results)
+
   return results;
 
 }
