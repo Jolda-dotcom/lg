@@ -275,6 +275,7 @@ function App() {
       }
 
       const data = await response.json();
+      console.log(data)
       const successCount = data.results.filter((item: any) => item.poweredOn).length;
       setStatusMessage(`Poslano WOL svim uređajima. Uspješno upaljeno ${successCount} od ${data.results.length}.`);
       setTimeout(() => setStatusMessage(""), 4000);

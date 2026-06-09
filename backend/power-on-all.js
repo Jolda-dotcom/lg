@@ -46,8 +46,9 @@ async function powerOnAll() {
       poweredOn: await wakeDevice(device.mac),
     }))
   );
-
+console.log(results)
   return results;
+
 }
 
 if (require.main === module) {
