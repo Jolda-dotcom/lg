@@ -5,6 +5,7 @@ const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
 const ping = require("ping");
 const wol = require("wake_on_lan");
+const WebSocket = require("ws");
 const { powerOnAll } = require("./power-on-all");
 
 const app = express();
@@ -101,6 +102,8 @@ async function initDatabase() {
   }
 }
 
+const POWER_QUERY_TIMEOUT_MS = 4000;
+
 const pingDevice = async (ip) => {
   try {
     const result = await ping.promise.probe(ip, {
@@ -110,6 +113,78 @@ const pingDevice = async (ip) => {
   } catch {
     return false;
   }
+};
+
+const mapWebosPowerState = (payload) => {
+  if (!payload || typeof payload.state !== "string") {
+    return null;
+  }
+
+  const state = payload.state.toLowerCase();
+  if (state.includes("active") || state.includes("on")) {
+    return "On";
+  }
+  if (state.includes("inactive") || state.includes("off")) {
+    return "Off";
+  }
+
+  return null;
+};
+
+const queryWebosPowerState = async (ip) => {
+  if (!ip) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const ws = new WebSocket(`ws://${ip}:3000`, {
+      handshakeTimeout: 3000,
+    });
+
+    const finish = (value) => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      clearTimeout(timeout);
+      try {
+        ws.terminate();
+      } catch {
+        // ignore
+      }
+      resolve(value);
+    };
+
+    const timeout = setTimeout(() => finish(null), POWER_QUERY_TIMEOUT_MS);
+
+    ws.on("open", () => {
+      ws.send(
+        JSON.stringify({
+          type: "request",
+          uri: "ssap://com.webos.service.power/getPowerState",
+          id: "powerState",
+        })
+      );
+    });
+
+    ws.on("message", (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        if (data.id === "powerState") {
+          const mapped = mapWebosPowerState(data.payload || data);
+          if (mapped) {
+            finish(mapped);
+          }
+        }
+      } catch {
+        // ignore invalid websocket messages
+      }
+    });
+
+    ws.on("error", () => finish(null));
+    ws.on("close", () => finish(null));
+  });
 };
 
 const wakeDevice = async (mac) =>
@@ -131,15 +206,27 @@ const wakeDevice = async (mac) =>
 async function refreshStatus(device) {
   const alive = await pingDevice(device.ip);
   const status = alive ? "Online" : "Offline";
+  let powerState = device.power_state || device.powerState || "Off";
 
-  if (status !== device.status) {
-    await runAsync("UPDATE devices SET status = ? WHERE id = ?", [
-      status,
-      device.id,
-    ]);
+  if (alive) {
+    const queriedState = await queryWebosPowerState(device.ip);
+    if (queriedState) {
+      powerState = queriedState;
+    } else {
+      powerState = "On";
+    }
+  } else {
+    powerState = "Off";
   }
 
-  return { ...device, status };
+  if (status !== device.status || powerState !== device.power_state) {
+    await runAsync(
+      "UPDATE devices SET status = ?, power_state = ? WHERE id = ?",
+      [status, powerState, device.id]
+    );
+  }
+
+  return { ...device, status, power_state: powerState, powerState };
 }
 
 app.use(cors());
@@ -224,13 +311,26 @@ app.post("/devices/:id/ping", async (req, res) => {
 
     const alive = await pingDevice(device.ip);
     const status = alive ? "Online" : "Offline";
+    let powerState = device.power_state || device.powerState || "Off";
 
-    await runAsync(`UPDATE devices SET status = ? WHERE id = ?`, [
+    if (alive) {
+      const queriedState = await queryWebosPowerState(device.ip);
+      if (queriedState) {
+        powerState = queriedState;
+      } else {
+        powerState = "On";
+      }
+    } else {
+      powerState = "Off";
+    }
+
+    await runAsync(`UPDATE devices SET status = ?, power_state = ? WHERE id = ?`, [
       status,
+      powerState,
       device.id,
     ]);
 
-    res.json({ id: device.id, status });
+    res.json({ id: device.id, status, powerState });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
