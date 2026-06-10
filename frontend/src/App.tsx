@@ -6,6 +6,7 @@ interface Device {
   name: string;
   ip: string;
   mac: string;
+  brand: string;
   status: string;
   powerState: string;
   selected: boolean;
@@ -33,6 +34,7 @@ function App() {
   const [deviceName, setDeviceName] = useState("");
   const [deviceIp, setDeviceIp] = useState("");
   const [deviceMac, setDeviceMac] = useState("");
+  const [deviceBrand, setDeviceBrand] = useState("generic");
   const [modalGroupId, setModalGroupId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [devices, setDevices] = useState<Device[]>([]);
@@ -69,6 +71,17 @@ function App() {
     refreshAll();
   }, []);
 
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      await loadDevices();
+      setLastRefresh(new Date().toLocaleTimeString());
+      setStatusMessage("Automatsko osvježenje statusa");
+      setTimeout(() => setStatusMessage(""), 2000);
+    }, 20000);
+
+    return () => clearInterval(interval);
+  }, [baseUrl]);
+
   const refreshAll = async () => {
     setLoading(true);
     await Promise.all([loadDevices(), loadGroups()]);
@@ -84,6 +97,7 @@ function App() {
       const data = await response.json();
       const mappedDevices = data.map((device: any) => ({
         ...device,
+        brand: device.brand || "generic",
         powerState: device.powerState || device.power_state || "Off",
         selected: false,
       }));
@@ -128,6 +142,7 @@ function App() {
     setDeviceName("");
     setDeviceIp("");
     setDeviceMac("");
+    setDeviceBrand("generic");
     setModalGroupId(null);
   };
 
@@ -183,6 +198,7 @@ function App() {
       name: deviceName,
       ip: deviceIp,
       mac: deviceMac,
+      brand: deviceBrand,
       groupId: modalGroupId,
     };
 
@@ -213,6 +229,7 @@ function App() {
                   name: deviceName,
                   ip: deviceIp,
                   mac: deviceMac,
+                  brand: deviceBrand,
                   groupId: modalGroupId,
                   groupName:
                     groups.find((group) => group.id === modalGroupId)
@@ -246,6 +263,7 @@ function App() {
           ...devices,
           {
             ...newDevice,
+            brand: newDevice.brand || "generic",
             powerState: newDevice.powerState || newDevice.power_state || "Off",
             selected: false,
             groupId: modalGroupId,
@@ -289,6 +307,84 @@ function App() {
     } catch (error) {
       console.error("Greska pri paljenju svih TV-a:", error);
       showMessage("Greška", "Greška pri paljenju svih TV-a.");
+    }
+  };
+
+  const handlePowerOffDevice = async (id: number) => {
+    try {
+      const response = await fetch(`${baseUrl}/devices/${id}/poweroff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showMessage(
+          "Greška",
+          `Nije uspjelo gašenje uređaja: ${errorData?.error || response.statusText}`
+        );
+        return;
+      }
+
+      const data = await response.json();
+      setStatusMessage(`Zahtjev za gašenje poslan: ${data.device || "uređaj"}.`);
+      setTimeout(() => setStatusMessage(""), 4000);
+      await refreshAll();
+    } catch (error) {
+      console.error("Greska pri gašenju uređaja:", error);
+      showMessage("Greška", "Greška pri gašenju uređaja.");
+    }
+  };
+
+  const handlePowerOnDevice = async (id: number) => {
+    try {
+      const response = await fetch(`${baseUrl}/devices/${id}/poweron`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showMessage(
+          "Greška",
+          `Nije uspjelo paljenje uređaja: ${errorData?.error || response.statusText}`
+        );
+        return;
+      }
+
+      const data = await response.json();
+      setStatusMessage(`Zahtjev za paljenje poslan: ${data.device || "uređaj"}.`);
+      setTimeout(() => setStatusMessage(""), 4000);
+      await refreshAll();
+    } catch (error) {
+      console.error("Greska pri paljenju uređaja:", error);
+      showMessage("Greška", "Greška pri paljenju uređaja.");
+    }
+  };
+
+  const handleRestartDevice = async (id: number) => {
+    try {
+      const response = await fetch(`${baseUrl}/devices/${id}/restart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showMessage(
+          "Greška",
+          `Nije uspio restart uređaja: ${errorData?.error || response.statusText}`
+        );
+        return;
+      }
+
+      const data = await response.json();
+      setStatusMessage(`Restart poslan: ${data.device || "uređaj"}.`);
+      setTimeout(() => setStatusMessage(""), 4000);
+      await refreshAll();
+    } catch (error) {
+      console.error("Greska pri restartu uređaja:", error);
+      showMessage("Greška", "Greška pri restartu uređaja.");
     }
   };
 
@@ -539,6 +635,32 @@ function App() {
     } catch (error) {
       console.error("Greška pri paljenju grupe:", error);
       showMessage("Greška", "Greška pri paljenju grupe.");
+    }
+  };
+
+  const handlePowerOffGroup = async (groupId: number) => {
+    try {
+      const response = await fetch(`${baseUrl}/groups/${groupId}/poweroff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        showMessage(
+          "Greška",
+          `Nije uspjelo gašenje grupe: ${errorData?.error || response.statusText}`
+        );
+        return;
+      }
+
+      const data = await response.json();
+      const successCount = data.results.filter((item: any) => item.poweredOff).length;
+      showMessage("Info", `Poslano gašenje grupe. Ugašeno ${successCount} uređaja.`);
+      await refreshAll();
+    } catch (error) {
+      console.error("Greška pri gašenju grupe:", error);
+      showMessage("Greška", "Greška pri gašenju grupe.");
     }
   };
 
@@ -908,6 +1030,13 @@ function App() {
                     >
                       Upali grupu
                     </button>
+                    <button
+                      type="button"
+                      className="action-btn poweroff-btn"
+                      onClick={() => handlePowerOffGroup(group.id)}
+                    >
+                      Isključi grupu
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1163,6 +1292,7 @@ function App() {
                   <tr>
                     <th></th>
                     <th>Naziv</th>
+                    <th>Marka</th>
                     <th>IP Adresa</th>
                     <th>MAC Adresa</th>
                     <th>Grupa</th>
@@ -1190,6 +1320,7 @@ function App() {
                           />
                         </td>
                         <td>{device.name}</td>
+                        <td>{device.brand || "generic"}</td>
                         <td>{device.ip}</td>
                         <td>{device.mac}</td>
                         <td>{device.groupName || "-"}</td>
@@ -1240,6 +1371,27 @@ function App() {
                             </button>
                             <button
                               type="button"
+                              className="poweron-btn"
+                              onClick={() => handlePowerOnDevice(device.id)}
+                            >
+                              Uključi
+                            </button>
+                            <button
+                              type="button"
+                              className="poweroff-btn"
+                              onClick={() => handlePowerOffDevice(device.id)}
+                            >
+                              Isključi
+                            </button>
+                            <button
+                              type="button"
+                              className="action-btn restart-btn"
+                              onClick={() => handleRestartDevice(device.id)}
+                            >
+                              Restart
+                            </button>
+                            <button
+                              type="button"
                               className="delete-btn"
                               onClick={() => {
                                 setPendingDelete(device.id);
@@ -1286,6 +1438,29 @@ function App() {
                   <span>Status:</span>
                   <strong>{formatStatusText(selectedDevice.status)}</strong>
                 </div>
+                <div className="detail-actions">
+                  <button
+                    type="button"
+                    className="action-btn poweron-btn"
+                    onClick={() => handlePowerOnDevice(selectedDevice.id)}
+                  >
+                    Uključi uređaj
+                  </button>
+                  <button
+                    type="button"
+                    className="action-btn poweroff-btn"
+                    onClick={() => handlePowerOffDevice(selectedDevice.id)}
+                  >
+                    Isključi uređaj
+                  </button>
+                  <button
+                    type="button"
+                    className="action-btn restart-btn"
+                    onClick={() => handleRestartDevice(selectedDevice.id)}
+                  >
+                    Restart uređaja
+                  </button>
+                </div>
                 <div className="history-section">
                   <h3>Posljednji zapisi</h3>
                   <ul>
@@ -1326,6 +1501,14 @@ function App() {
               onChange={(e) => setDeviceMac(e.target.value)}
               placeholder="MAC adresa"
             />
+            <select
+              value={deviceBrand}
+              onChange={(e) => setDeviceBrand(e.target.value)}
+            >
+              <option value="generic">Generic</option>
+              <option value="webos">LG webOS</option>
+              <option value="samsung">Samsung</option>
+            </select>
             <select
               value={modalGroupId ?? ""}
               onChange={(e) =>

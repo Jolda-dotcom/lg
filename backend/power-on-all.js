@@ -1,6 +1,6 @@
 const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
-const wol = require("wake_on_lan");
+const { powerOnDevice } = require("./tv-adapter");
 
 const DB_FILE = path.join(__dirname, "data.db");
 const db = new sqlite3.Database(DB_FILE);
@@ -27,30 +27,14 @@ const runAsync = (sql, params = []) =>
     });
   });
 
-const wakeDevice = (mac) =>
-  new Promise((resolve) => {
-    if (!mac) {
-      return resolve(false);
-    }
-
-    try {
-      wol.wake(mac, (err) => {
-        resolve(!err);
-      });
-    } catch (error) {
-      console.warn(`Invalid MAC for WOL: ${mac}`, error.message);
-      resolve(false);
-    }
-  });
-
 async function powerOnAll() {
   const devices = await allAsync(
-    `SELECT id, name, ip, mac FROM devices WHERE mac IS NOT NULL AND mac != '' ORDER BY name COLLATE NOCASE`
+    `SELECT id, name, ip, mac, brand FROM devices ORDER BY name COLLATE NOCASE`
   );
 
   const results = await Promise.all(
     devices.map(async (device) => {
-      const poweredOn = await wakeDevice(device.mac);
+      const poweredOn = await powerOnDevice(device);
       if (poweredOn) {
         try {
           await runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [device.id]);
@@ -63,6 +47,7 @@ async function powerOnAll() {
         name: device.name,
         ip: device.ip,
         mac: device.mac,
+        brand: device.brand,
         poweredOn,
       };
     })
