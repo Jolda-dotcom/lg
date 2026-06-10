@@ -265,6 +265,24 @@ select {
   border: 1px solid var(--border);
 }
 
+.poweron-btn {
+  background: #16a34a;
+  color: white;
+  border-color: #16a34a;
+}
+
+.poweroff-btn {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+
+.poweron-btn:hover,
+.poweroff-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+}
+
 .restart-btn {
   background: var(--warning);
   color: white;
