@@ -470,6 +470,12 @@ select {
   margin: 18px 0;
 }
 
+.detail-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
  .add-btn,
  .save-btn,
  .action-btn,

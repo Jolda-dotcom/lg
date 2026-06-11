@@ -60,6 +60,12 @@ function App() {
   const [scheduleTarget, setScheduleTarget] = useState("");
   const [scheduleDescription, setScheduleDescription] = useState("");
   const [scheduleEnabled, setScheduleEnabled] = useState(true);
+  const [scheduleSequence, setScheduleSequence] = useState<any[]>([]);
+  const [currentStepAction, setCurrentStepAction] = useState("poweron");
+  const [currentStepParam, setCurrentStepParam] = useState("");
+  const [currentStepDelay, setCurrentStepDelay] = useState("");
+  const [currentStepWaitForReady, setCurrentStepWaitForReady] = useState("");
+  const [currentStepSettle, setCurrentStepSettle] = useState("");
   const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState<"info" | "schedule">("info");
   const [groupFilter, setGroupFilter] = useState<number | null>(null);
@@ -210,6 +216,7 @@ function App() {
     setScheduleDescription("");
     setScheduleEnabled(true);
     setEditingScheduleId(null);
+    setScheduleSequence([]);
   };
 
   const isCronValid = (expression: string) => {
@@ -268,6 +275,17 @@ function App() {
     setScheduleDescription(schedule.description || "");
     setScheduleEnabled(schedule.enabled);
     setDetailTab("schedule");
+    // populate sequence if stored as sequence
+    try {
+      const params = schedule.action_params || {};
+      if (schedule.action === "sequence" && params && Array.isArray(params.sequence)) {
+        setScheduleSequence(params.sequence.map((s: any) => ({ ...s })));
+      } else {
+        setScheduleSequence([]);
+      }
+    } catch (e) {
+      setScheduleSequence([]);
+    }
   };
 
   const handleSaveSchedule = async () => {
@@ -299,18 +317,35 @@ function App() {
       }
     }
 
-    const payload = {
-      cron: scheduleCron.trim(),
-      action: scheduleAction,
-      action_params:
-        scheduleAction === "launchApp"
-          ? { target: scheduleTarget.trim() }
-          : scheduleAction === "setVolume"
-          ? { volume: Number(scheduleTarget) }
-          : {},
-      description: scheduleDescription.trim(),
-      enabled: scheduleEnabled,
-    };
+    // Build payload: if sequence steps exist, send as `actions` array
+    let payload: any;
+    if (Array.isArray(scheduleSequence) && scheduleSequence.length > 0) {
+      payload = {
+        cron: scheduleCron.trim(),
+        actions: scheduleSequence.map((s) => ({
+          action: s.action,
+          params: s.params || {},
+          delayMs: s.delayMs || undefined,
+          waitForReadyMs: s.waitForReadyMs || undefined,
+          settleMs: s.settleMs || undefined,
+        })),
+        description: scheduleDescription.trim(),
+        enabled: scheduleEnabled,
+      };
+    } else {
+      payload = {
+        cron: scheduleCron.trim(),
+        action: scheduleAction,
+        action_params:
+          scheduleAction === "launchApp"
+            ? { target: scheduleTarget.trim() }
+            : scheduleAction === "setVolume"
+            ? { volume: Number(scheduleTarget) }
+            : {},
+        description: scheduleDescription.trim(),
+        enabled: scheduleEnabled,
+      };
+    }
 
     const available = getAvailableActions(selectedDevice);
     if (!available.some((action) => action.value === scheduleAction)) {
@@ -342,6 +377,45 @@ function App() {
       console.error("Spremanje rasporeda nije uspjelo:", error);
       showMessage("Greška", "Greška pri spremanju rasporeda.");
     }
+  };
+
+  const addStepToSequence = () => {
+    const step: any = { action: currentStepAction };
+    if (currentStepParam && currentStepAction === "launchApp") {
+      step.params = { target: currentStepParam.trim() };
+    }
+    if (currentStepParam && currentStepAction === "setVolume") {
+      const v = Number(currentStepParam);
+      if (!Number.isNaN(v)) {
+        step.params = { volume: v };
+      }
+    }
+    if (currentStepDelay) step.delayMs = Number(currentStepDelay);
+    if (currentStepWaitForReady) step.waitForReadyMs = Number(currentStepWaitForReady);
+    if (currentStepSettle) step.settleMs = Number(currentStepSettle);
+
+    setScheduleSequence((prev) => [...prev, step]);
+
+    // reset current step fields
+    setCurrentStepParam("");
+    setCurrentStepDelay("");
+    setCurrentStepWaitForReady("");
+    setCurrentStepSettle("");
+  };
+
+  const removeStep = (index: number) => {
+    setScheduleSequence((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const moveStep = (index: number, dir: number) => {
+    setScheduleSequence((prev) => {
+      const arr = [...prev];
+      const newIndex = index + dir;
+      if (newIndex < 0 || newIndex >= arr.length) return arr;
+      const [item] = arr.splice(index, 1);
+      arr.splice(newIndex, 0, item);
+      return arr;
+    });
   };
 
   const handleDeleteSchedule = async (scheduleId: number) => {
@@ -384,6 +458,41 @@ function App() {
       showMessage("Greška", "Greška pri ažuriranju rasporeda.");
     }
   };
+
+  const fetchScheduleLogs = async (schedule: DeviceSchedule) => {
+    try {
+      const response = await fetch(`${baseUrl}/devices/${selectedDeviceId}/schedules/${schedule.id}/logs`);
+      if (!response.ok) {
+        showMessage('Greška', 'Ne mogu dohvatiti logove.');
+        return;
+      }
+      const data = await response.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        showMessage('Logovi', 'Nema zapisa za ovaj raspored.');
+        return;
+      }
+      const text = data.map((r: any) => `${r.created_at} [${r.status}] ${r.details || ''}`).join('\n\n');
+      showMessage('Logovi rasporeda', text);
+    } catch (e) {
+      console.error('Dohvat logova nije uspio', e);
+      showMessage('Greška', 'Dohvat logova nije uspio');
+    }
+  };
+
+    const handleTriggerSchedule = async (schedule: DeviceSchedule) => {
+      if (!selectedDeviceId) return;
+      try {
+        const resp = await fetch(`${baseUrl}/devices/${selectedDeviceId}/schedules/${schedule.id}/trigger`, { method: 'POST' });
+        if (!resp.ok) {
+          showMessage('Greška', 'Ne mogu pokrenuti raspored.');
+          return;
+        }
+        showMessage('Info', 'Raspored je pokrenut (manualni trigger).');
+      } catch (e) {
+        console.error('Trigger rasporeda nije uspio', e);
+        showMessage('Greška', 'Trigger rasporeda nije uspio');
+      }
+    };
 
   const recordDeviceEvent = (device: Device, note: string) => {
     setDeviceHistory((prevHistory) => {
@@ -1838,6 +1947,20 @@ function App() {
                                 </button>
                                 <button
                                   type="button"
+                                  className="action-btn"
+                                  onClick={() => fetchScheduleLogs(schedule)}
+                                >
+                                  Logovi
+                                </button>
+                                <button
+                                  type="button"
+                                  className="action-btn"
+                                  onClick={() => handleTriggerSchedule(schedule)}
+                                >
+                                  Pokreni
+                                </button>
+                                <button
+                                  type="button"
                                   className="action-btn settings-btn"
                                   onClick={() => handleEditSchedule(schedule)}
                                 >
@@ -1898,6 +2021,68 @@ function App() {
                           }
                         />
                       )}
+
+                      <div className="sequence-editor">
+                        <h4>Sekvenca akcija (opcionalno)</h4>
+                        <div className="sequence-add-row">
+                          <select value={currentStepAction} onChange={(e) => setCurrentStepAction(e.target.value)}>
+                            {getAvailableActions(selectedDevice).map((action) => (
+                              <option key={action.value} value={action.value}>
+                                {action.label}
+                              </option>
+                            ))}
+                          </select>
+                          {(currentStepAction === "launchApp" || currentStepAction === "setVolume") && (
+                            <input
+                              value={currentStepParam}
+                              onChange={(e) => setCurrentStepParam(e.target.value)}
+                              placeholder={currentStepAction === "launchApp" ? "App ID ili URL" : "Volumen 0-100"}
+                            />
+                          )}
+                          <input
+                            value={currentStepDelay}
+                            onChange={(e) => setCurrentStepDelay(e.target.value)}
+                            placeholder="delay ms (npr. 5000)"
+                          />
+                          {currentStepAction === "poweron" && (
+                            <>
+                              <input
+                                value={currentStepWaitForReady}
+                                onChange={(e) => setCurrentStepWaitForReady(e.target.value)}
+                                placeholder="waitForReadyMs (ms, default 30000)"
+                              />
+                              <input
+                                value={currentStepSettle}
+                                onChange={(e) => setCurrentStepSettle(e.target.value)}
+                                placeholder="settleMs (ms, npr. 2000)"
+                              />
+                            </>
+                          )}
+                          <button type="button" className="action-btn" onClick={addStepToSequence}>Dodaj u sekvencu</button>
+                        </div>
+
+                        {scheduleSequence.length > 0 && (
+                          <div className="sequence-list">
+                            {scheduleSequence.map((step, idx) => (
+                              <div key={idx} className="sequence-step">
+                                <div>
+                                  <strong>{getActionLabel(step.action)}</strong>
+                                  {step.params?.target && <div className="muted">{step.params.target}</div>}
+                                  {typeof step.params?.volume === 'number' && <div className="muted">Volumen: {step.params.volume}</div>}
+                                  {step.delayMs && <div className="muted">Delay: {step.delayMs} ms</div>}
+                                  {step.waitForReadyMs && <div className="muted">WaitReady: {step.waitForReadyMs} ms</div>}
+                                  {step.settleMs && <div className="muted">Settle: {step.settleMs} ms</div>}
+                                </div>
+                                <div className="sequence-step-actions">
+                                  <button type="button" onClick={() => moveStep(idx, -1)}>↑</button>
+                                  <button type="button" onClick={() => moveStep(idx, 1)}>↓</button>
+                                  <button type="button" onClick={() => removeStep(idx)}>✕</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <label>Opis</label>
                       <input
                         value={scheduleDescription}

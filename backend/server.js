@@ -100,6 +100,17 @@ async function initDatabase() {
     )`
   );
 
+  await runAsync(
+    `CREATE TABLE IF NOT EXISTS schedule_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule_id INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(schedule_id) REFERENCES device_schedules(id) ON DELETE CASCADE
+    )`
+  );
+
   const existingColumns = await allAsync(`PRAGMA table_info(devices)`);
   if (!existingColumns.some((column) => column.name === "brand")) {
     await runAsync(`ALTER TABLE devices ADD COLUMN brand TEXT NOT NULL DEFAULT 'generic'`);
@@ -108,7 +119,14 @@ async function initDatabase() {
     await runAsync(`ALTER TABLE devices ADD COLUMN power_state TEXT NOT NULL DEFAULT 'Off'`);
   }
   if (!existingColumns.some((column) => column.name === "last_active_at")) {
-    await runAsync(`ALTER TABLE devices ADD COLUMN last_active_at TEXT DEFAULT CURRENT_TIMESTAMP`);
+    // SQLite may reject ALTER TABLE ADD COLUMN with non-constant default (CURRENT_TIMESTAMP)
+    // Add the column without default, then populate existing rows.
+    await runAsync(`ALTER TABLE devices ADD COLUMN last_active_at TEXT`);
+    try {
+      await runAsync(`UPDATE devices SET last_active_at = CURRENT_TIMESTAMP WHERE last_active_at IS NULL`);
+    } catch (e) {
+      // ignore if update fails
+    }
   }
 
   const row = await getAsync("SELECT COUNT(*) AS count FROM devices");
@@ -334,6 +352,15 @@ const executeScheduleAction = async (scheduleId) => {
     console.warn(`Failed to parse action_params for schedule ${scheduleId}:`, error.message);
   }
   // If the schedule contains a sequence of actions, run them in order
+  // record run start
+  let runRowId = null;
+  try {
+    const r = await runAsync(`INSERT INTO schedule_runs (schedule_id, status, details) VALUES (?, ?, ?)`, [scheduleId, 'running', null]);
+    runRowId = r.lastID;
+  } catch (e) {
+    // ignore logging errors
+  }
+
   if (Array.isArray(actionParams.sequence) && actionParams.sequence.length > 0) {
     for (const step of actionParams.sequence) {
       const act = step.action;
@@ -404,10 +431,19 @@ const executeScheduleAction = async (scheduleId) => {
           await new Promise((r) => setTimeout(r, Number(step.delayMs)));
         }
       } catch (err) {
-        console.error(`Error executing step ${act} for schedule ${scheduleId}:`, err);
+          console.error(`Error executing step ${act} for schedule ${scheduleId}:`, err);
+          // log error details
+          try {
+            if (runRowId) await runAsync(`UPDATE schedule_runs SET status = ?, details = ? WHERE id = ?`, ['failed', JSON.stringify({ step: act, error: String(err) }), runRowId]);
+          } catch (e) {}
+          // continue to next step
       }
     }
-    return;
+      // all steps finished successfully
+      try {
+        if (runRowId) await runAsync(`UPDATE schedule_runs SET status = ?, details = ? WHERE id = ?`, ['success', JSON.stringify({ sequence: actionParams.sequence }), runRowId]);
+      } catch (e) {}
+      return;
   }
 
   // Fallback: single-action schedules (backwards compatible)
@@ -447,10 +483,39 @@ const executeScheduleAction = async (scheduleId) => {
     default:
       console.warn(`Unknown schedule action for schedule ${scheduleId}: ${schedule.action}`);
   }
+
+  // update single-action run status
+  try {
+    if (runRowId) await runAsync(`UPDATE schedule_runs SET status = ?, details = ? WHERE id = ?`, ['success', JSON.stringify({ action: schedule.action, params: actionParams }), runRowId]);
+  } catch (e) {}
 };
 
 app.use(cors());
 app.use(express.json());
+
+// Request logger for debugging
+app.use((req, res, next) => {
+  try {
+    console.log(`REQ --> ${req.method} ${req.originalUrl}`);
+  } catch (e) {}
+  next();
+});
+
+// Debug route: list registered routes
+app.get('/__routes', (req, res) => {
+  try {
+    const routes = [];
+    app._router.stack.forEach((r) => {
+      if (r.route && r.route.path) {
+        const methods = Object.keys(r.route.methods).join(',').toUpperCase();
+        routes.push({ path: r.route.path, methods });
+      }
+    });
+    res.json(routes);
+  } catch (e) {
+    res.status(500).json({ error: 'failed to list routes' });
+  }
+});
 
 app.get("/devices", async (req, res) => {
   try {
@@ -717,6 +782,32 @@ app.delete("/devices/:id/schedules/:scheduleId", async (req, res) => {
 
     removeScheduleTask(Number(req.params.scheduleId));
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual trigger for a schedule (useful for testing)
+app.post('/devices/:id/schedules/:scheduleId/trigger', async (req, res) => {
+  try {
+    const schedule = await getAsync(`SELECT * FROM device_schedules WHERE id = ? AND device_id = ?`, [req.params.scheduleId, req.params.id]);
+    if (!schedule) return res.status(404).json({ error: 'Schedule not found for device' });
+
+    console.log(`Manual trigger requested for schedule ${req.params.scheduleId} on device ${req.params.id}`);
+    // run asynchronously but respond immediately
+    executeScheduleAction(Number(req.params.scheduleId)).catch((e) => console.error('Error executing manual trigger:', e));
+
+    res.json({ triggered: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/devices/:id/schedules/:scheduleId/logs', async (req, res) => {
+  try {
+    console.log('HANDLER --> logs', req.params);
+    const rows = await allAsync(`SELECT * FROM schedule_runs WHERE schedule_id = ? ORDER BY id DESC LIMIT 50`, [req.params.scheduleId]);
+    res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1028,6 +1119,19 @@ app.post("/groups/:id/poweron", async (req, res) => {
 initDatabase()
   .then(async () => {
     await loadScheduleTasks();
+    // debug: list registered routes
+    try {
+      const routes = [];
+      app._router.stack.forEach((r) => {
+        if (r.route && r.route.path) {
+          const methods = Object.keys(r.route.methods).join(',').toUpperCase();
+          routes.push(`${methods} ${r.route.path}`);
+        }
+      });
+      console.log('Registered routes:\n' + routes.join('\n'));
+    } catch (e) {
+      // ignore
+    }
     app.listen(PORT, () => {
       console.log(`🚀 Backend radi na http://localhost:${PORT}`);
     });
