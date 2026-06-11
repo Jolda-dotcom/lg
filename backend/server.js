@@ -6,11 +6,17 @@ const sqlite3 = require("sqlite3").verbose();
 const ping = require("ping");
 const wol = require("wake_on_lan");
 const WebSocket = require("ws");
+const cron = require("node-cron");
 const { powerOnAll } = require("./power-on-all");
 const {
   powerOnDevice,
   powerOffDevice,
   queryDevicePowerState,
+  wakeDevice,
+  launchWebosApp,
+  setWebosMute,
+  adjustWebosVolume,
+  setWebosVolume,
 } = require("./tv-adapter");
 
 const app = express();
@@ -74,7 +80,23 @@ async function initDatabase() {
       power_state TEXT NOT NULL DEFAULT 'Off',
       group_id INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      last_active_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE SET NULL
+    )`
+  );
+
+  await runAsync(
+    `CREATE TABLE IF NOT EXISTS device_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id INTEGER NOT NULL,
+      cron TEXT NOT NULL,
+      action TEXT NOT NULL,
+      action_params TEXT,
+      description TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE CASCADE
     )`
   );
 
@@ -84,6 +106,9 @@ async function initDatabase() {
   }
   if (!existingColumns.some((column) => column.name === "power_state")) {
     await runAsync(`ALTER TABLE devices ADD COLUMN power_state TEXT NOT NULL DEFAULT 'Off'`);
+  }
+  if (!existingColumns.some((column) => column.name === "last_active_at")) {
+    await runAsync(`ALTER TABLE devices ADD COLUMN last_active_at TEXT DEFAULT CURRENT_TIMESTAMP`);
   }
 
   const row = await getAsync("SELECT COUNT(*) AS count FROM devices");
@@ -197,22 +222,6 @@ const queryWebosPowerState = async (ip) => {
   });
 };
 
-const wakeDevice = async (mac) =>
-  new Promise((resolve) => {
-    if (!mac) {
-      return resolve(false);
-    }
-
-    try {
-      wol.wake(mac, (err) => {
-        resolve(!err);
-      });
-    } catch (error) {
-      console.warn(`Invalid MAC for WOL: ${mac}`, error.message);
-      resolve(false);
-    }
-  });
-
 async function refreshStatus(device) {
   const alive = await pingDevice(device.ip);
   const status = alive ? "Online" : "Offline";
@@ -229,13 +238,216 @@ async function refreshStatus(device) {
 
   if (status !== device.status || powerState !== device.power_state) {
     await runAsync(
-      "UPDATE devices SET status = ?, power_state = ? WHERE id = ?",
-      [status, powerState, device.id]
+      "UPDATE devices SET status = ?, power_state = ?, last_active_at = ? WHERE id = ?",
+      [
+        status,
+        powerState,
+        alive ? new Date().toISOString() : device.last_active_at || new Date().toISOString(),
+        device.id,
+      ]
+    );
+  } else if (alive && !device.last_active_at) {
+    await runAsync(
+      "UPDATE devices SET last_active_at = ? WHERE id = ?",
+      [new Date().toISOString(), device.id]
     );
   }
 
   return { ...device, status, power_state: powerState, powerState };
 }
+
+const scheduledTasks = new Map();
+
+const registerScheduleTask = (schedule) => {
+  if (!cron.validate(schedule.cron)) {
+    console.warn(`Invalid cron expression for schedule ${schedule.id}: ${schedule.cron}`);
+    return;
+  }
+
+  const existingTask = scheduledTasks.get(schedule.id);
+  if (existingTask) {
+    existingTask.stop();
+  }
+
+  const task = cron.schedule(schedule.cron, async () => {
+    console.log(`🔔 Running schedule ${schedule.id} for device ${schedule.device_id}: ${schedule.action}`);
+    try {
+      await executeScheduleAction(schedule.id);
+    } catch (error) {
+      console.error(`Schedule ${schedule.id} failed:`, error);
+    }
+  });
+
+  scheduledTasks.set(schedule.id, task);
+};
+
+const removeScheduleTask = (scheduleId) => {
+  const task = scheduledTasks.get(scheduleId);
+  if (task) {
+    task.stop();
+    scheduledTasks.delete(scheduleId);
+  }
+};
+
+const reloadScheduleTask = async (scheduleId) => {
+  try {
+    const schedule = await getAsync(
+      `SELECT * FROM device_schedules WHERE id = ? AND enabled = 1`,
+      [scheduleId]
+    );
+
+    removeScheduleTask(scheduleId);
+
+    if (schedule) {
+      registerScheduleTask(schedule);
+    }
+  } catch (error) {
+    console.error(`Failed to reload schedule ${scheduleId}:`, error);
+  }
+};
+
+const loadScheduleTasks = async () => {
+  const schedules = await allAsync(`SELECT * FROM device_schedules WHERE enabled = 1`);
+  schedules.forEach(registerScheduleTask);
+};
+
+const executeScheduleAction = async (scheduleId) => {
+  const schedule = await getAsync(
+    `SELECT * FROM device_schedules WHERE id = ?`,
+    [scheduleId]
+  );
+
+  if (!schedule || schedule.enabled !== 1) {
+    return;
+  }
+
+  const device = await getAsync(`SELECT * FROM devices WHERE id = ?`, [schedule.device_id]);
+  if (!device) {
+    console.warn(`Schedule ${scheduleId} references missing device ${schedule.device_id}`);
+    return;
+  }
+
+  let actionParams = {};
+  try {
+    actionParams = schedule.action_params ? JSON.parse(schedule.action_params) : {};
+  } catch (error) {
+    console.warn(`Failed to parse action_params for schedule ${scheduleId}:`, error.message);
+  }
+  // If the schedule contains a sequence of actions, run them in order
+  if (Array.isArray(actionParams.sequence) && actionParams.sequence.length > 0) {
+    for (const step of actionParams.sequence) {
+      const act = step.action;
+      const params = step.params || {};
+      try {
+        switch (act) {
+          case "poweron":
+            await powerOnDevice(device);
+            await runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [device.id]);
+
+            // wait for the device to report as 'On' before proceeding to next step
+            // step.waitForReadyMs can override the default max wait (ms)
+            const maxWaitMs = Number(step.waitForReadyMs || 30000);
+            const pollInterval = 1000;
+            let waited = 0;
+            try {
+              while (waited < maxWaitMs) {
+                const state = await queryDevicePowerState(device);
+                if (state && typeof state === "string" && state.toLowerCase().includes("on")) {
+                  break;
+                }
+                await new Promise((r) => setTimeout(r, pollInterval));
+                waited += pollInterval;
+              }
+            } catch (e) {
+              // ignore polling errors and continue
+            }
+
+            // optional settle delay after ready
+            if (step.settleMs && Number(step.settleMs) > 0) {
+              await new Promise((r) => setTimeout(r, Number(step.settleMs)));
+            }
+            break;
+          case "poweroff":
+            await powerOffDevice(device);
+            await runAsync(`UPDATE devices SET power_state = 'Off' WHERE id = ?`, [device.id]);
+            break;
+          case "restart":
+            await wakeDevice(device.mac);
+            await runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [device.id]);
+            break;
+          case "launchApp":
+            await launchWebosApp(device.ip, params.target || params.appId || params.uri);
+            break;
+          case "mute":
+            await setWebosMute(device.ip, true);
+            break;
+          case "unmute":
+            await setWebosMute(device.ip, false);
+            break;
+          case "volumeUp":
+            await adjustWebosVolume(device.ip, "Up");
+            break;
+          case "volumeDown":
+            await adjustWebosVolume(device.ip, "Down");
+            break;
+          case "setVolume":
+            if (typeof params.volume === "number") {
+              await setWebosVolume(device.ip, params.volume);
+            }
+            break;
+          default:
+            console.warn(`Unknown step action for schedule ${scheduleId}: ${act}`);
+        }
+
+        // optional delay after this step (ms)
+        if (step.delayMs && Number(step.delayMs) > 0) {
+          await new Promise((r) => setTimeout(r, Number(step.delayMs)));
+        }
+      } catch (err) {
+        console.error(`Error executing step ${act} for schedule ${scheduleId}:`, err);
+      }
+    }
+    return;
+  }
+
+  // Fallback: single-action schedules (backwards compatible)
+  switch (schedule.action) {
+    case "poweron":
+      await powerOnDevice(device);
+      await runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [device.id]);
+      break;
+    case "poweroff":
+      await powerOffDevice(device);
+      await runAsync(`UPDATE devices SET power_state = 'Off' WHERE id = ?`, [device.id]);
+      break;
+    case "restart":
+      await wakeDevice(device.mac);
+      await runAsync(`UPDATE devices SET power_state = 'On' WHERE id = ?`, [device.id]);
+      break;
+    case "launchApp":
+      await launchWebosApp(device.ip, actionParams.target || actionParams.appId || actionParams.uri);
+      break;
+    case "mute":
+      await setWebosMute(device.ip, true);
+      break;
+    case "unmute":
+      await setWebosMute(device.ip, false);
+      break;
+    case "volumeUp":
+      await adjustWebosVolume(device.ip, "Up");
+      break;
+    case "volumeDown":
+      await adjustWebosVolume(device.ip, "Down");
+      break;
+    case "setVolume":
+      if (typeof actionParams.volume === "number") {
+        await setWebosVolume(device.ip, actionParams.volume);
+      }
+      break;
+    default:
+      console.warn(`Unknown schedule action for schedule ${scheduleId}: ${schedule.action}`);
+  }
+};
 
 app.use(cors());
 app.use(express.json());
@@ -372,6 +584,141 @@ app.post("/devices/:id/poweroff", async (req, res) => {
     res.status(500).json({
       error: error.message,
     });
+  }
+});
+
+app.get("/devices/:id/schedules", async (req, res) => {
+  try {
+    const schedules = await allAsync(
+      `SELECT * FROM device_schedules WHERE device_id = ? ORDER BY enabled DESC, id DESC`,
+      [req.params.id]
+    );
+
+    res.json(
+      schedules.map((schedule) => ({
+        ...schedule,
+        enabled: schedule.enabled === 1,
+        action_params: schedule.action_params ? JSON.parse(schedule.action_params) : {},
+      }))
+    );
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/devices/:id/schedules", async (req, res) => {
+  try {
+    const { cron: cronExpression, action, action_params, actions, description, enabled } = req.body;
+
+    if (!cron.validate(cronExpression)) {
+      return res.status(400).json({ error: "Invalid cron expression." });
+    }
+
+    // allow either single `action` or an `actions` array for sequences
+    let dbAction = action || null;
+    let dbActionParams = action_params || null;
+
+    if (Array.isArray(actions) && actions.length > 0) {
+      dbAction = "sequence";
+      dbActionParams = { sequence: actions };
+    }
+
+    if (!dbAction) {
+      return res.status(400).json({ error: "Action or actions sequence is required." });
+    }
+
+    const result = await runAsync(
+      `INSERT INTO device_schedules (device_id, cron, action, action_params, description, enabled) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        req.params.id,
+        cronExpression,
+        dbAction,
+        dbActionParams ? JSON.stringify(dbActionParams) : null,
+        description || null,
+        enabled ? 1 : 0,
+      ]
+    );
+
+    const schedule = await getAsync(`SELECT * FROM device_schedules WHERE id = ?`, [result.lastID]);
+    if (schedule && schedule.enabled === 1) {
+      registerScheduleTask(schedule);
+    }
+
+    res.json({
+      ...schedule,
+      enabled: schedule.enabled === 1,
+      action_params: schedule.action_params ? JSON.parse(schedule.action_params) : {},
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/devices/:id/schedules/:scheduleId", async (req, res) => {
+  try {
+    const { cron: cronExpression, action, action_params, actions, description, enabled } = req.body;
+
+    if (!cron.validate(cronExpression)) {
+      return res.status(400).json({ error: "Invalid cron expression." });
+    }
+
+    let dbAction = action || null;
+    let dbActionParams = action_params || null;
+    if (Array.isArray(actions) && actions.length > 0) {
+      dbAction = "sequence";
+      dbActionParams = { sequence: actions };
+    }
+
+    if (!dbAction) {
+      return res.status(400).json({ error: "Action or actions sequence is required." });
+    }
+
+    await runAsync(
+      `UPDATE device_schedules SET cron = ?, action = ?, action_params = ?, description = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND device_id = ?`,
+      [
+        cronExpression,
+        dbAction,
+        dbActionParams ? JSON.stringify(dbActionParams) : null,
+        description || null,
+        enabled ? 1 : 0,
+        req.params.scheduleId,
+        req.params.id,
+      ]
+    );
+
+    const schedule = await getAsync(
+      `SELECT * FROM device_schedules WHERE id = ?`,
+      [req.params.scheduleId]
+    );
+
+    if (schedule) {
+      removeScheduleTask(schedule.id);
+      if (schedule.enabled === 1) {
+        registerScheduleTask(schedule);
+      }
+    }
+
+    res.json({
+      ...schedule,
+      enabled: schedule.enabled === 1,
+      action_params: schedule.action_params ? JSON.parse(schedule.action_params) : {},
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/devices/:id/schedules/:scheduleId", async (req, res) => {
+  try {
+    await runAsync(`DELETE FROM device_schedules WHERE id = ? AND device_id = ?`, [
+      req.params.scheduleId,
+      req.params.id,
+    ]);
+
+    removeScheduleTask(Number(req.params.scheduleId));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -679,7 +1026,8 @@ app.post("/groups/:id/poweron", async (req, res) => {
 });
 
 initDatabase()
-  .then(() => {
+  .then(async () => {
+    await loadScheduleTasks();
     app.listen(PORT, () => {
       console.log(`🚀 Backend radi na http://localhost:${PORT}`);
     });

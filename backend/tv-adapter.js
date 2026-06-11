@@ -1,10 +1,13 @@
 const net = require("net");
+const fs = require("fs");
+const path = require("path");
 const WebSocket = require("ws");
 const wol = require("wake_on_lan");
 const ping = require("ping");
 const SamsungRemote = require("samsung-remote");
 const { sendWebosPowerOff } = require("./power-off-tv");
 
+const CLIENT_KEY_FILE = path.join(__dirname, "webos-client-key.txt");
 const POWER_QUERY_TIMEOUT_MS = 4000;
 
 const normalizeBrand = (brand) => {
@@ -12,6 +15,156 @@ const normalizeBrand = (brand) => {
     return "generic";
   }
   return brand.trim().toLowerCase();
+};
+
+const readWebosClientKey = () => {
+  if (process.env.WEBOS_CLIENT_KEY) {
+    return process.env.WEBOS_CLIENT_KEY.trim();
+  }
+
+  try {
+    if (fs.existsSync(CLIENT_KEY_FILE)) {
+      return fs.readFileSync(CLIENT_KEY_FILE, "utf8").trim();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const sendWebosRequest = async (ip, payload, permissions = []) =>
+  new Promise((resolve) => {
+    if (!ip) {
+      return resolve(false);
+    }
+
+    const clientKey = readWebosClientKey();
+    const ws = new WebSocket(`wss://${ip}:3001`, {
+      rejectUnauthorized: false,
+      handshakeTimeout: 5000,
+    });
+
+    const manifest = {
+      manifestVersion: 1,
+      appVersion: "1.0",
+      signed: {
+        appId: "com.node.tv-scheduler",
+        vendorId: "nodejs",
+        timestamp: new Date().toISOString(),
+      },
+      permissions: permissions.length ? permissions : ["CONTROL_POWER", "CONTROL_AUDIO", "LAUNCH", "LAUNCH_WEBAPP"],
+    };
+
+    const handleClose = () => resolve(false);
+    const timeout = setTimeout(handleClose, 10000);
+
+    ws.on("open", () => {
+      ws.send(
+        JSON.stringify({
+          type: "register",
+          id: "register_0",
+          payload: {
+            pairingType: "PROMPT",
+            manifest,
+            ...(clientKey ? { "client-key": clientKey } : {}),
+          },
+        })
+      );
+    });
+
+    ws.on("message", (message) => {
+      try {
+        const msg = JSON.parse(message.toString());
+        if (msg.type === "registered") {
+          ws.send(JSON.stringify(payload));
+          return;
+        }
+
+        if (msg.type === "response" || msg.type === "error") {
+          clearTimeout(timeout);
+          ws.close();
+          resolve(msg.type !== "error");
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    });
+
+    ws.on("error", () => {
+      clearTimeout(timeout);
+      resolve(false);
+    });
+
+    ws.on("close", () => {
+      clearTimeout(timeout);
+      resolve(false);
+    });
+  });
+
+const launchWebosApp = async (ip, target) => {
+  if (!target) {
+    return false;
+  }
+
+  return sendWebosRequest(
+    ip,
+    {
+      type: "request",
+      id: "launch_app",
+      uri: "ssap://system.launcher/open",
+      payload: { target },
+    },
+    ["CONTROL_POWER", "LAUNCH", "LAUNCH_WEBAPP"]
+  );
+};
+
+const setWebosMute = async (ip, muted) => {
+  return sendWebosRequest(
+    ip,
+    {
+      type: "request",
+      id: "set_mute",
+      uri: "ssap://audio/setMute",
+      payload: { mute: muted },
+    },
+    ["CONTROL_AUDIO"]
+  );
+};
+
+const adjustWebosVolume = async (ip, direction) => {
+  if (!ip) {
+    return false;
+  }
+
+  const uri = direction === "Up" ? "ssap://audio/volumeUp" : "ssap://audio/volumeDown";
+  return sendWebosRequest(
+    ip,
+    {
+      type: "request",
+      id: `volume_${direction.toLowerCase()}`,
+      uri,
+      payload: {},
+    },
+    ["CONTROL_AUDIO"]
+  );
+};
+
+const setWebosVolume = async (ip, volume) => {
+  if (!ip || typeof volume !== "number") {
+    return false;
+  }
+
+  return sendWebosRequest(
+    ip,
+    {
+      type: "request",
+      id: "set_volume",
+      uri: "ssap://audio/setVolume",
+      payload: { volume },
+    },
+    ["CONTROL_AUDIO"]
+  );
 };
 
 const wakeDevice = async (mac) =>
@@ -236,4 +389,8 @@ module.exports = {
   powerOffDevice,
   queryDevicePowerState,
   sendWebosPowerOff,
+  launchWebosApp,
+  setWebosMute,
+  adjustWebosVolume,
+  setWebosVolume,
 };
