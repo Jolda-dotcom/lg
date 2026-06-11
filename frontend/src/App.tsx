@@ -61,6 +61,7 @@ function App() {
   const [scheduleDescription, setScheduleDescription] = useState("");
   const [scheduleEnabled, setScheduleEnabled] = useState(true);
   const [scheduleSequence, setScheduleSequence] = useState<any[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [currentStepAction, setCurrentStepAction] = useState("poweron");
   const [currentStepParam, setCurrentStepParam] = useState("");
   const [currentStepDelay, setCurrentStepDelay] = useState("");
@@ -407,15 +408,38 @@ function App() {
     setScheduleSequence((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const moveStep = (index: number, dir: number) => {
+  
+
+  const reorderSteps = (from: number, to: number) => {
     setScheduleSequence((prev) => {
       const arr = [...prev];
-      const newIndex = index + dir;
-      if (newIndex < 0 || newIndex >= arr.length) return arr;
-      const [item] = arr.splice(index, 1);
-      arr.splice(newIndex, 0, item);
+      if (from < 0 || from >= arr.length) return arr;
+      const item = arr.splice(from, 1)[0];
+      // if dropping after removal and target index equals length, push to end
+      const insertAt = Math.min(Math.max(0, to), arr.length);
+      arr.splice(insertAt, 0, item);
       return arr;
     });
+    setDragIndex(null);
+  };
+
+  const onDragStart = (e: React.DragEvent, idx: number) => {
+    try {
+      e.dataTransfer.setData('text/plain', String(idx));
+      e.dataTransfer.effectAllowed = 'move';
+      setDragIndex(idx);
+    } catch (err) {}
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const onDrop = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    const from = Number(e.dataTransfer.getData('text/plain'));
+    if (!Number.isNaN(from)) reorderSteps(from, idx);
   };
 
   const handleDeleteSchedule = async (scheduleId: number) => {
@@ -2064,7 +2088,14 @@ function App() {
                         {scheduleSequence.length > 0 && (
                           <div className="sequence-list">
                             {scheduleSequence.map((step, idx) => (
-                              <div key={idx} className="sequence-step">
+                              <div
+                                key={idx}
+                                className={`sequence-step ${dragIndex === idx ? 'dragging' : ''}`}
+                                draggable
+                                onDragStart={(e) => onDragStart(e, idx)}
+                                onDragOver={(e) => onDragOver(e)}
+                                onDrop={(e) => onDrop(e, idx)}
+                              >
                                 <div>
                                   <strong>{getActionLabel(step.action)}</strong>
                                   {step.params?.target && <div className="muted">{step.params.target}</div>}
@@ -2074,8 +2105,6 @@ function App() {
                                   {step.settleMs && <div className="muted">Settle: {step.settleMs} ms</div>}
                                 </div>
                                 <div className="sequence-step-actions">
-                                  <button type="button" onClick={() => moveStep(idx, -1)}>↑</button>
-                                  <button type="button" onClick={() => moveStep(idx, 1)}>↓</button>
                                   <button type="button" onClick={() => removeStep(idx)}>✕</button>
                                 </div>
                               </div>
