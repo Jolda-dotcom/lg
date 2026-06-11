@@ -17,7 +17,7 @@
     "express": "^5.2.1",
     "node-cron": "^4.2.1",
     "ping": "^0.4.0",
-    "samsung-remote": "^2.0.1",
+    "samsung-remote": "^1.6.2",
     "sqlite3": "^5.1.6",
     "wake_on_lan": "^1.0.0",
     "ws": "^8.21.0"

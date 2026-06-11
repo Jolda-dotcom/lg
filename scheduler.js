@@ -6,7 +6,7 @@ const TV_IP = "192.168.89.65";
 const TV_MAC = "D8:74:EF:1D:A0:49";
 const CLIENT_KEY = "22652ac1f80992d654275c4fc3ac3a50";
 
-// PALJENJE TV-a u 06:57
+
 cron.schedule("57 6 * * *", () => {
   console.log("🚀 06:57 - Palim TV");
 
@@ -19,7 +19,7 @@ cron.schedule("57 6 * * *", () => {
   });
 });
 
-// OTVARANJE BROWSERA u 07:00
+
 cron.schedule("0 7 * * *", () => {
   console.log("🌐 07:00 - Otvaram browser");
 
@@ -80,7 +80,7 @@ cron.schedule("0 7 * * *", () => {
   });
 });
 
-// GAŠENJE TV-a u 16:00
+
 cron.schedule("0 16 * * *", () => {
   console.log("🛑 16:00 - Gasim TV");
 

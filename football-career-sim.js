@@ -1,5 +1,5 @@
-// football-career-sim.js
-// Samostalna simulacija fudbalske karijere napadača golgetera.
+
+
 
 function formatMoney(value) {
   return `€${value.toLocaleString('en-US')}`;

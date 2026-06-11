@@ -222,8 +222,6 @@ async function refreshStatus(device) {
     const queriedState = await queryDevicePowerState(device);
     if (queriedState) {
       powerState = queriedState;
-    } else {
-      powerState = "On";
     }
   } else {
     powerState = "Off";
@@ -327,8 +325,6 @@ app.post("/devices/:id/ping", async (req, res) => {
       const queriedState = await queryDevicePowerState(device);
       if (queriedState) {
         powerState = queriedState;
-      } else {
-        powerState = "On";
       }
     } else {
       powerState = "Off";
@@ -365,7 +361,7 @@ app.post("/devices/:id/poweroff", async (req, res) => {
 
     await runAsync(`UPDATE devices SET power_state = ? WHERE id = ?`, [newState, device.id]);
 
-    console.log(`Power off requested for ${device.name} (${device.ip}) brand=${device.brand}`);
+    console.log(`Power off requested for ${device.name} (${device.ip}) brand=${device.brand} success=${success}`);
 
     res.json({
       success,

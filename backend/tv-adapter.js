@@ -3,6 +3,7 @@ const WebSocket = require("ws");
 const wol = require("wake_on_lan");
 const ping = require("ping");
 const SamsungRemote = require("samsung-remote");
+const { sendWebosPowerOff } = require("./power-off-tv");
 
 const POWER_QUERY_TIMEOUT_MS = 4000;
 
@@ -63,7 +64,7 @@ const queryWebosPowerState = async (ip) => {
       try {
         ws.terminate();
       } catch {
-        // ignore
+
       }
       resolve(value);
     };
@@ -99,7 +100,7 @@ const queryWebosPowerState = async (ip) => {
           }
         }
       } catch {
-        // ignore invalid websocket messages
+
       }
     });
 
@@ -107,55 +108,6 @@ const queryWebosPowerState = async (ip) => {
     ws.on("close", () => finish(null));
   });
 };
-
-const sendWebosPowerOff = async (ip) =>
-  new Promise((resolve) => {
-    if (!ip) {
-      return resolve(false);
-    }
-
-    const ws = new WebSocket(`ws://${ip}:3000`, {
-      handshakeTimeout: 3000,
-    });
-
-    const timeout = setTimeout(() => {
-      try {
-        ws.terminate();
-      } catch {
-        // ignore
-      }
-      resolve(false);
-    }, POWER_QUERY_TIMEOUT_MS);
-
-    ws.on("open", () => {
-      ws.send(
-        JSON.stringify({
-          type: "request",
-          id: "poweroff",
-          uri: "ssap://system/turnOff",
-        })
-      );
-    });
-
-    ws.on("message", () => {
-      clearTimeout(timeout);
-      try {
-        ws.terminate();
-      } catch {
-        // ignore
-      }
-      resolve(true);
-    });
-
-    ws.on("error", () => {
-      clearTimeout(timeout);
-      resolve(false);
-    });
-    ws.on("close", () => {
-      clearTimeout(timeout);
-      resolve(true);
-    });
-  });
 
 const checkTcpPort = async (ip, port, timeoutMs = 2000) =>
   new Promise((resolve) => {
@@ -250,6 +202,10 @@ const powerOffDevice = async (device) => {
     return sendSamsungPowerOff(ip);
   }
 
+  if (brand === "generic") {
+    return sendWebosPowerOff(ip);
+  }
+
   return false;
 };
 
@@ -279,4 +235,5 @@ module.exports = {
   powerOnDevice,
   powerOffDevice,
   queryDevicePowerState,
+  sendWebosPowerOff,
 };
